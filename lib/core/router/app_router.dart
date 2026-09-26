@@ -5,7 +5,6 @@ import 'package:go_router/go_router.dart';
 import '../../features/auth/presentation/auth_controller.dart';
 import '../../features/auth/presentation/login_screen.dart';
 import '../../features/auth/presentation/splash_screen.dart';
-import '../../features/credits/presentation/credits_screen.dart';
 import '../../features/credits_debts/presentation/credits_debts_screen.dart';
 import '../../features/customers/presentation/customers_screen.dart';
 import '../../features/dashboard/presentation/dashboard_screen.dart';
@@ -14,18 +13,18 @@ import '../../features/inventory/presentation/inventory_screen.dart';
 import '../../features/products/presentation/products_screen.dart';
 import '../../features/purchases/presentation/purchases_screen.dart';
 import '../../features/reports/presentation/reports_screen.dart';
-import '../../features/staff/presentation/staff_screen.dart';
+import '../../features/subscription/presentation/subscription_locked_screen.dart';
 import '../../features/suppliers/presentation/suppliers_screen.dart';
 import '../../features/warehouses/presentation/warehouses_screen.dart';
 import '../../shared/widgets/app_shell.dart';
 
 /// Public routes reachable regardless of session state — exempt from the
 /// "not logged in -> /login" redirect below.
-const _publicRoutes = {'/login', '/credits'};
+const _publicRoutes = {'/login'};
 
 /// Fade + gentle slide-up used for the top-level routes below (splash,
-/// login, credits). The nested module screens inside [AppShell] get their
-/// own cross-fade from [AnimatedSwitcher] when you switch sidebar sections.
+/// login). The nested module screens inside [AppShell] get their own
+/// cross-fade from [AnimatedSwitcher] when you switch sidebar sections.
 CustomTransitionPage<void> _fadeThroughPage(Widget child, GoRouterState state) {
   return CustomTransitionPage<void>(
     key: state.pageKey,
@@ -65,16 +64,25 @@ String? _redirect(BuildContext context, GoRouterState state) {
     return location == '/splash' ? null : '/splash';
   }
 
-  final loggedIn = authState.valueOrNull != null;
+  final me = authState.valueOrNull;
+  final loggedIn = me != null;
 
   if (!loggedIn) {
     // Resolved with no session (never had a token, or it was rejected) —
     // send everyone, including whoever's still parked on /splash, to login.
-    // /credits stays reachable either way — it's just an info page.
     return _publicRoutes.contains(location) ? null : '/login';
   }
 
-  if (location == '/login' || location == '/splash') return '/';
+  // `pending`/`expired`/`cancelled`/`suspended` — the API rejects every
+  // gated endpoint with 402/403 `subscription_inactive` for these, so the
+  // client locks the whole app shell rather than let someone wander in and
+  // hit a wall of failed requests. `trial`/`active`/`past_due` are fine.
+  final isLocked = me.organization?.isLocked ?? false;
+  if (isLocked) {
+    return location == '/locked' ? null : '/locked';
+  }
+
+  if (location == '/login' || location == '/splash' || location == '/locked') return '/';
   return null;
 }
 
@@ -95,8 +103,9 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         pageBuilder: (context, state) => _fadeThroughPage(const LoginScreen(), state),
       ),
       GoRoute(
-        path: '/credits',
-        pageBuilder: (context, state) => _fadeThroughPage(const CreditsScreen(), state),
+        path: '/locked',
+        pageBuilder: (context, state) =>
+            _fadeThroughPage(const SubscriptionLockedScreen(), state),
       ),
       StatefulShellRoute.indexedStack(
         builder: (context, state, navigationShell) =>
@@ -147,9 +156,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             routes: [
               GoRoute(path: '/warehouses', builder: (context, state) => const WarehousesScreen()),
             ],
-          ),
-          StatefulShellBranch(
-            routes: [GoRoute(path: '/staff', builder: (context, state) => const StaffScreen())],
           ),
           StatefulShellBranch(
             routes: [

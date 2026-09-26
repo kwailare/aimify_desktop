@@ -1,20 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../inventory/data/low_stock_view.dart';
+import '../../../inventory/data/inventory_repository.dart';
+import '../../../products/domain/product.dart';
 
-/// (Product, warehouse) pairs at or below their reorder threshold,
-/// org-wide, ordered worst-first — reads from [orgWideLowStockProvider].
-/// See that file for the swap-in seam once a real inventory API exists.
+/// Out-of-stock products first, then low-stock ones, straight from
+/// `GET /api/v1/alerts/stock`.
 class LowStockWatchlistCard extends ConsumerWidget {
   const LowStockWatchlistCard({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final lowStock = ref.watch(orgWideLowStockProvider).toList()
-      ..sort((a, b) => (a.stock.quantity / a.stock.lowStockThreshold)
-          .compareTo(b.stock.quantity / b.stock.lowStockThreshold));
+    final alerts = ref.watch(stockAlertListProvider);
+    final rows = [
+      ...alerts.outOfStock,
+      ...([...alerts.lowStock]
+        ..sort((a, b) => (a.currentStock / a.minStock).compareTo(b.currentStock / b.minStock))),
+    ];
 
     return Container(
       padding: const EdgeInsets.all(22),
@@ -32,7 +35,7 @@ class LowStockWatchlistCard extends ConsumerWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'Low-stock watchlist',
+                  'Stock alerts',
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
                 ),
@@ -41,26 +44,26 @@ class LowStockWatchlistCard extends ConsumerWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            'Reorder before these run out, across every warehouse',
+            'Reorder before these run out',
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSurface.withValues(alpha: 0.55),
             ),
           ),
           const SizedBox(height: 16),
-          if (lowStock.isEmpty)
+          if (rows.isEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 24),
               child: Text(
-                'Nothing below its reorder threshold right now.',
+                'Nothing is low or out of stock right now.',
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
                 ),
               ),
             )
           else
-            for (var i = 0; i < lowStock.length; i++) ...[
-              _WatchlistRow(entry: lowStock[i], index: i),
-              if (i != lowStock.length - 1) const SizedBox(height: 14),
+            for (var i = 0; i < rows.length; i++) ...[
+              _WatchlistRow(product: rows[i], index: i),
+              if (i != rows.length - 1) const SizedBox(height: 14),
             ],
         ],
       ),
@@ -69,16 +72,17 @@ class LowStockWatchlistCard extends ConsumerWidget {
 }
 
 class _WatchlistRow extends StatelessWidget {
-  const _WatchlistRow({required this.entry, required this.index});
+  const _WatchlistRow({required this.product, required this.index});
 
-  final LowStockEntry entry;
+  final Product product;
   final int index;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final stock = entry.stock;
-    final ratio = (stock.quantity / stock.lowStockThreshold).clamp(0.0, 1.0);
+    final ratio = product.minStock <= 0
+        ? 0.0
+        : (product.currentStock / product.minStock).clamp(0.0, 1.0);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -87,16 +91,21 @@ class _WatchlistRow extends StatelessWidget {
           children: [
             Expanded(
               child: Text(
-                '${entry.product.name} · ${entry.warehouse.name}',
+                product.name,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
               ),
             ),
             Text(
-              '${stock.quantity} / ${stock.lowStockThreshold}',
+              product.isOutOfStock
+                  ? 'Out of stock'
+                  : '${product.currentStock} / ${product.minStock}',
               style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                color: product.isOutOfStock
+                    ? theme.colorScheme.error
+                    : theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                fontWeight: product.isOutOfStock ? FontWeight.w700 : null,
               ),
             ),
           ],

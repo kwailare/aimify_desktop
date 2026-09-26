@@ -26,6 +26,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'fakes/fake_repositories.dart';
 import 'fakes/fake_token_storage.dart';
 
 class _FakeAuthController extends AuthController {
@@ -42,6 +43,16 @@ class _FakeAuthController extends AuthController {
           trialEndsAt: null,
         ),
         role: 'Owner',
+        // Full Owner permission set (see docs/desktop-api.md) — this test
+        // exercises the sidebar toggle, not permission gating itself.
+        permissions: [
+          'products.write',
+          'products.archive',
+          'catalog.write',
+          'warehouses.manage',
+          'stock.out',
+          'stock.adjust',
+        ],
       );
 }
 
@@ -55,6 +66,7 @@ Future<ProviderContainer> _pumpAuthenticatedApp(WidgetTester tester, Size size) 
     overrides: [
       secureTokenStorageProvider.overrideWithValue(FakeTokenStorage()),
       authControllerProvider.overrideWith(_FakeAuthController.new),
+      ...fakeDataOverrides(),
     ],
   );
   addTearDown(container.dispose);

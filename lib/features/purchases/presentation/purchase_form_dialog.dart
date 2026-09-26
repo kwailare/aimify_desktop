@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/utils/formatters.dart';
 import '../../suppliers/data/suppliers_repository.dart';
-import '../../warehouses/data/warehouses_repository.dart';
 import '../data/purchases_repository.dart';
 import '../domain/purchase.dart';
 
@@ -22,15 +21,8 @@ class _PurchaseFormDialogState extends ConsumerState<PurchaseFormDialog> {
   final _amountPaidController = TextEditingController(text: '0');
 
   String? _supplierName;
-  String? _warehouseId;
   PaymentStatus _status = PaymentStatus.unpaid;
   final List<PurchaseLineItem> _items = [];
-
-  @override
-  void initState() {
-    super.initState();
-    _warehouseId = ref.read(selectedWarehouseIdProvider);
-  }
 
   @override
   void dispose() {
@@ -57,16 +49,12 @@ class _PurchaseFormDialogState extends ConsumerState<PurchaseFormDialog> {
 
   void _save() {
     if (!_formKey.currentState!.validate()) return;
-    if (_supplierName == null || _warehouseId == null || _items.isEmpty) return;
-
-    final warehouse = ref.read(warehousesProvider).firstWhere((w) => w.id == _warehouseId);
+    if (_supplierName == null || _items.isEmpty) return;
 
     ref.read(purchasesProvider.notifier).addPurchase(
           Purchase(
             id: 'SAMPLE-PO-${DateTime.now().microsecondsSinceEpoch}',
             supplierName: _supplierName!,
-            warehouseId: warehouse.id,
-            warehouseName: warehouse.name,
             date: DateTime.now(),
             items: List.of(_items),
             paymentStatus: _status,
@@ -78,8 +66,7 @@ class _PurchaseFormDialogState extends ConsumerState<PurchaseFormDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final warehouses = ref.watch(warehousesProvider);
-    final suppliers = ref.watch(suppliersProvider).where((s) => s.warehouseId == _warehouseId);
+    final suppliers = ref.watch(suppliersProvider);
 
     return AlertDialog(
       title: const Text('Record purchase'),
@@ -92,29 +79,13 @@ class _PurchaseFormDialogState extends ConsumerState<PurchaseFormDialog> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 DropdownButtonFormField<String>(
-                  initialValue: _warehouseId,
-                  decoration: const InputDecoration(labelText: 'Warehouse'),
-                  items: [
-                    for (final warehouse in warehouses)
-                      DropdownMenuItem(value: warehouse.id, child: Text(warehouse.name)),
-                  ],
-                  onChanged: (value) => setState(() {
-                    _warehouseId = value;
-                    _supplierName = null;
-                  }),
-                  validator: (value) => value == null ? 'Select a warehouse' : null,
-                ),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<String>(
                   initialValue: _supplierName,
                   decoration: const InputDecoration(labelText: 'Supplier'),
                   items: [
                     for (final supplier in suppliers)
                       DropdownMenuItem(value: supplier.name, child: Text(supplier.name)),
                   ],
-                  onChanged: _warehouseId == null
-                      ? null
-                      : (value) => setState(() => _supplierName = value),
+                  onChanged: (value) => setState(() => _supplierName = value),
                   validator: (value) => value == null ? 'Select a supplier' : null,
                 ),
                 const SizedBox(height: 16),

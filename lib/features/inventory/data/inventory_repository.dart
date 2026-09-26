@@ -1,101 +1,132 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/constants/api_constants.dart';
+import '../../../shared/services/authed_api.dart';
+import '../../auth/presentation/auth_controller.dart';
+import '../../products/data/products_repository.dart';
+import '../../products/domain/product.dart';
 import '../domain/stock_movement.dart';
-import 'warehouse_stock_repository.dart';
 
-/// MOCK repository — in-memory stock movement log. No `/api/v1/inventory`
-/// endpoint exists yet. Recording a movement here also nudges the matching
-/// `WarehouseStock` row via [WarehouseStockNotifier.adjustStock], purely so
-/// the two mock modules stay visually consistent with each other.
-class InventoryNotifier extends Notifier<List<StockMovement>> {
-  @override
-  List<StockMovement> build() {
-    final now = DateTime.now();
+/// Products currently below their reorder level or out of stock, as
+/// `GET /api/v1/alerts/stock` reports them.
+class StockAlerts {
+  const StockAlerts({this.lowStock = const [], this.outOfStock = const []});
+
+  final List<Product> lowStock;
+  final List<Product> outOfStock;
+
+  bool get isEmpty => lowStock.isEmpty && outOfStock.isEmpty;
+  int get total => lowStock.length + outOfStock.length;
+}
+
+/// REAL `/api/v1/inventory/movements` and `/api/v1/alerts/stock`.
+///
+/// Movements are the only way a product's stock ever changes.
+class InventoryRepository {
+  InventoryRepository(this._api);
+
+  final AuthedApi _api;
+
+  /// The 100 most recent movements, newest first.
+  Future<List<StockMovement>> movements() async {
+    final json = await _api.get(ApiConstants.movements);
     return [
-      StockMovement(
-        id: 'm1',
-        productId: 'p1',
-        productName: '50kg Bag of Rice',
-        warehouseId: 'w1',
-        warehouseName: 'Lagos Main Warehouse',
-        type: StockMovementType.stockIn,
-        quantity: 20,
-        reason: 'Purchase delivery — SAMPLE-PO-1001',
-        date: now.subtract(const Duration(days: 4)),
-        resultingStock: 42,
-      ),
-      StockMovement(
-        id: 'm2',
-        productId: 'p2',
-        productName: '25L Vegetable Oil',
-        warehouseId: 'w1',
-        warehouseName: 'Lagos Main Warehouse',
-        type: StockMovementType.stockOut,
-        quantity: 12,
-        reason: 'Dispatched to retail partner',
-        date: now.subtract(const Duration(days: 2)),
-        resultingStock: 8,
-      ),
-      StockMovement(
-        id: 'm3',
-        productId: 'p4',
-        productName: '1kg Sugar Pack',
-        warehouseId: 'w1',
-        warehouseName: 'Lagos Main Warehouse',
-        type: StockMovementType.adjustment,
-        quantity: 3,
-        reason: 'Damaged stock write-off',
-        date: now.subtract(const Duration(hours: 20)),
-        resultingStock: 5,
-      ),
-      StockMovement(
-        id: 'm4',
-        productId: 'p1',
-        productName: '50kg Bag of Rice',
-        warehouseId: 'w2',
-        warehouseName: 'Abuja Depot',
-        type: StockMovementType.stockOut,
-        quantity: 15,
-        reason: 'Dispatched to retail partner',
-        date: now.subtract(const Duration(days: 1)),
-        resultingStock: 10,
-      ),
+      for (final row in (json['movements'] as List<dynamic>? ?? const []))
+        StockMovement.fromJson(row as Map<String, dynamic>),
     ];
   }
 
-  void addMovement({
+  /// [quantity] is a signed whole-number delta: positive adds stock,
+  /// negative removes it. The server applies it atomically.
+  Future<MovementResult> record({
     required String productId,
-    required String productName,
     required String warehouseId,
-    required String warehouseName,
     required StockMovementType type,
     required int quantity,
-    required String reason,
-  }) {
-    final stockNotifier = ref.read(warehouseStockProvider.notifier);
-    final delta = quantity * type.signMultiplier;
-    stockNotifier.adjustStock(productId, warehouseId, delta);
+    String? reason,
+  }) async {
+    final json = await _api.post(ApiConstants.movements, {
+      'productId': productId,
+      'warehouseId': warehouseId,
+      'type': type.apiValue,
+      'quantity': quantity,
+      if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
+    });
+    return MovementResult.fromJson(json);
+  }
 
-    final updatedStock = stockNotifier.stockOf(productId, warehouseId);
-
-    state = [
-      StockMovement(
-        id: 'm${DateTime.now().microsecondsSinceEpoch}',
-        productId: productId,
-        productName: productName,
-        warehouseId: warehouseId,
-        warehouseName: warehouseName,
-        type: type,
-        quantity: quantity,
-        reason: reason,
-        date: DateTime.now(),
-        resultingStock: updatedStock?.quantity ?? 0,
-      ),
-      ...state,
-    ];
+  Future<StockAlerts> alerts() async {
+    final json = await _api.get(ApiConstants.stockAlerts);
+    List<Product> parse(String key) => [
+          for (final row in (json[key] as List<dynamic>? ?? const []))
+            Product.fromJson(row as Map<String, dynamic>),
+        ];
+    return StockAlerts(lowStock: parse('lowStock'), outOfStock: parse('outOfStock'));
   }
 }
 
-final inventoryProvider = NotifierProvider<InventoryNotifier, List<StockMovement>>(
-  InventoryNotifier.new,
+final inventoryRepositoryProvider = Provider<InventoryRepository>(
+  (ref) => InventoryRepository(ref.watch(authedApiProvider)),
+);
+
+class MovementsNotifier extends AsyncNotifier<List<StockMovement>> {
+  @override
+  Future<List<StockMovement>> build() async {
+    if (ref.watch(sessionUserIdProvider) == null) return const [];
+    return ref.watch(inventoryRepositoryProvider).movements();
+  }
+
+  Future<void> refresh() async {
+    state = await AsyncValue.guard(ref.read(inventoryRepositoryProvider).movements);
+  }
+
+  /// Records a movement, then re-reads everything it changes: the ledger,
+  /// the products (their `currentStock`) and the alert lists.
+  Future<MovementResult> record({
+    required String productId,
+    required String warehouseId,
+    required StockMovementType type,
+    required int quantity,
+    String? reason,
+  }) async {
+    final result = await ref.read(inventoryRepositoryProvider).record(
+          productId: productId,
+          warehouseId: warehouseId,
+          type: type,
+          quantity: quantity,
+          reason: reason,
+        );
+    await Future.wait([
+      refresh(),
+      ref.read(productsProvider.notifier).refresh(),
+      ref.read(stockAlertsProvider.notifier).refresh(),
+    ]);
+    return result;
+  }
+}
+
+final movementsProvider =
+    AsyncNotifierProvider<MovementsNotifier, List<StockMovement>>(MovementsNotifier.new);
+
+final movementListProvider = Provider<List<StockMovement>>(
+  (ref) => ref.watch(movementsProvider).valueOrNull ?? const [],
+);
+
+class StockAlertsNotifier extends AsyncNotifier<StockAlerts> {
+  @override
+  Future<StockAlerts> build() async {
+    if (ref.watch(sessionUserIdProvider) == null) return const StockAlerts();
+    return ref.watch(inventoryRepositoryProvider).alerts();
+  }
+
+  Future<void> refresh() async {
+    state = await AsyncValue.guard(ref.read(inventoryRepositoryProvider).alerts);
+  }
+}
+
+final stockAlertsProvider =
+    AsyncNotifierProvider<StockAlertsNotifier, StockAlerts>(StockAlertsNotifier.new);
+
+final stockAlertListProvider = Provider<StockAlerts>(
+  (ref) => ref.watch(stockAlertsProvider).valueOrNull ?? const StockAlerts(),
 );

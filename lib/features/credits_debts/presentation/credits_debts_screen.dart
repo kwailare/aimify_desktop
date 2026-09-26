@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/utils/formatters.dart';
-import '../../../shared/widgets/mock_data_badge.dart';
+import '../../../shared/widgets/local_only_badge.dart';
 import '../../../shared/widgets/section_header.dart';
 import '../../../shared/widgets/stat_card.dart';
 import '../../../shared/widgets/status_pill.dart';
@@ -13,10 +13,11 @@ import '../../suppliers/domain/supplier.dart';
 import 'record_payment_dialog.dart';
 
 /// Money owed to the business (customer balances) and money the business
-/// owes (supplier balances), in one place. Reads from the same MOCK
-/// [customersProvider] / [suppliersProvider] as those modules' own
-/// screens — this is a different view over the same data, not a separate
-/// source of truth.
+/// owes (supplier balances), in one place — credit tracking for customers
+/// and suppliers. LOCAL ONLY: it reads the same on-computer
+/// [customersProvider] / [suppliersProvider] as those modules' own screens
+/// (no backend exists for either yet), so it is a different view over the
+/// same data, not a separate source of truth.
 class CreditsDebtsScreen extends ConsumerStatefulWidget {
   const CreditsDebtsScreen({super.key});
 
@@ -59,7 +60,7 @@ class _CreditsDebtsScreenState extends ConsumerState<CreditsDebtsScreen>
             const SectionHeader(
               title: 'Credits & Debts',
               subtitle: 'Money owed to you, and money you owe suppliers',
-              badge: MockDataBadge(),
+              badge: LocalOnlyBadge(),
             ),
             const SizedBox(height: 20),
             LayoutBuilder(

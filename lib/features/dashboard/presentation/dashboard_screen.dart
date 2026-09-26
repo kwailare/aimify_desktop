@@ -1,18 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../shared/widgets/mock_data_badge.dart';
 import '../../../shared/widgets/section_header.dart';
 import '../../auth/presentation/auth_controller.dart';
 import 'widgets/dashboard_hero.dart';
 import 'widgets/low_stock_watchlist_card.dart';
 import 'widgets/metric_bento_grid.dart';
 import 'widgets/recent_activity_card.dart';
+import 'widgets/setup_checklist_card.dart';
 
-/// Home screen. [DashboardHero] (greeting/organization/subscription) is
-/// REAL — straight from `GET /api/v1/me` via [authControllerProvider].
-/// Everything below it (the bento metric grid, activity feed, watchlist)
-/// is derived from MOCK module data — see `data/dashboard_metrics.dart`.
+/// Home screen. [DashboardHero] (greeting, organization, subscription) comes
+/// straight from `GET /api/v1/me`; everything below it is derived from the
+/// live products, warehouses, alerts and stock ledger — see
+/// `data/dashboard_metrics.dart`.
 class DashboardScreen extends ConsumerWidget {
   const DashboardScreen({super.key});
 
@@ -31,7 +31,9 @@ class DashboardScreen extends ConsumerWidget {
                 padding: EdgeInsets.symmetric(vertical: 48),
                 child: Center(child: CircularProgressIndicator()),
               ),
-              error: (error, _) => _ErrorBanner(message: error.toString()),
+              error: (error, _) => const _ErrorBanner(
+                message: "Couldn't load your account. Check your connection and try again.",
+              ),
               data: (me) {
                 if (me == null) {
                   return const _ErrorBanner(
@@ -42,10 +44,10 @@ class DashboardScreen extends ConsumerWidget {
               },
             ),
             const SizedBox(height: 32),
+            const SetupChecklistCard(),
             const SectionHeader(
-              title: 'Business snapshot',
-              subtitle: 'Inventory, sales and outstanding balances at a glance',
-              badge: MockDataBadge(),
+              title: 'Inventory snapshot',
+              subtitle: 'Stock value, alerts and warehouses at a glance',
             ),
             const SizedBox(height: 16),
             const MetricBentoGrid(),

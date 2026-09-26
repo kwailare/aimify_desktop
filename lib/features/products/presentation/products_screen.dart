@@ -2,29 +2,26 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/utils/formatters.dart';
+import '../../../shared/widgets/async_state.dart';
 import '../../../shared/widgets/category_tag.dart';
-import '../../../shared/widgets/mock_data_badge.dart';
 import '../../../shared/widgets/section_header.dart';
 import '../../../shared/widgets/stat_card.dart';
 import '../../../shared/widgets/status_pill.dart';
 import '../../../shared/widgets/stock_level_bar.dart';
 import '../../../shared/widgets/toolbar_search_field.dart';
-import '../../../shared/widgets/warehouse/warehouse_selector.dart';
-import '../../inventory/data/warehouse_stock_repository.dart';
-import '../../warehouses/data/warehouses_repository.dart';
-import '../data/product_stock_view.dart';
+import '../../auth/domain/permissions.dart';
+import '../../auth/presentation/auth_controller.dart';
+import '../../auth/presentation/permissions_provider.dart';
 import '../data/products_repository.dart';
+import '../domain/product.dart';
 import 'product_form_dialog.dart';
-import 'widgets/bulk_import_dialog.dart';
-import 'widgets/edit_product_dialog.dart';
+import 'widgets/catalog_manager_dialog.dart';
 
 enum _SortField { name, category, purchasePrice, sellingPrice, stock }
 
-/// UI-only for now: reads from the MOCK [scopedProductsProvider], which
-/// joins the product catalog with per-warehouse stock (see
-/// `product_stock_view.dart`). Selecting one warehouse shows only what's
-/// actually stocked there — not every catalog item with a zero — which is
-/// the point: warehouses are independent, not shared numbers relabeled.
+/// The product catalog, live from `/api/v1/products`. Create/edit need
+/// `products.write`, archiving needs `products.archive`, and adding is also
+/// blocked once the plan's product cap is reached (archiving frees a slot).
 class ProductsScreen extends ConsumerStatefulWidget {
   const ProductsScreen({super.key});
 
@@ -59,39 +56,53 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final allEntries = ref.watch(scopedProductsProvider);
-    final isAllWarehouses = ref.watch(selectedWarehouseIdProvider) == null;
+    final productsState = ref.watch(productsProvider);
+    final all = ref.watch(productListProvider);
 
-    final categories = <String>{for (final e in allEntries) e.product.category}.toList()..sort();
+    final canWrite = hasPermission(ref, Permissions.productsWrite);
+    final canArchive = hasPermission(ref, Permissions.productsArchive);
+    final plan = ref.watch(authControllerProvider).valueOrNull?.plan;
+    final atProductCap = plan?.productsAtCap ?? false;
+
+    var subtitle = '${all.length} active product(s)';
+    if (plan?.limits.products != null) {
+      subtitle += ' · plan: ${plan!.usage.products}/${plan.limits.products} products used';
+    }
+
+    final categories = <String>{
+      for (final p in all)
+        if (p.category != null) p.category!,
+    }.toList()
+      ..sort();
     if (_categoryFilter != null && !categories.contains(_categoryFilter)) {
       _categoryFilter = null;
     }
 
-    var entries = allEntries.where((e) {
-      if (_categoryFilter != null && e.product.category != _categoryFilter) return false;
-      if (_search.isEmpty) return true;
-      final q = _search.toLowerCase();
-      return e.product.name.toLowerCase().contains(q) || e.product.sku.toLowerCase().contains(q);
+    final query = _search.toLowerCase();
+    var entries = all.where((p) {
+      if (_categoryFilter != null && p.category != _categoryFilter) return false;
+      if (query.isEmpty) return true;
+      return p.name.toLowerCase().contains(query) ||
+          p.sku.toLowerCase().contains(query) ||
+          (p.brand?.toLowerCase().contains(query) ?? false) ||
+          (p.barcode?.toLowerCase().contains(query) ?? false);
     }).toList();
 
-    int compare(ProductWithStock a, ProductWithStock b) {
+    int compare(Product a, Product b) {
       final cmp = switch (_sortField) {
-        _SortField.name => a.product.name.compareTo(b.product.name),
-        _SortField.category => a.product.category.compareTo(b.product.category),
-        _SortField.purchasePrice => a.product.purchasePrice.compareTo(b.product.purchasePrice),
-        _SortField.sellingPrice => a.product.sellingPrice.compareTo(b.product.sellingPrice),
-        _SortField.stock => a.totalQuantity.compareTo(b.totalQuantity),
+        _SortField.name => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+        _SortField.category => (a.category ?? '').compareTo(b.category ?? ''),
+        _SortField.purchasePrice => a.purchasePrice.compareTo(b.purchasePrice),
+        _SortField.sellingPrice => a.sellingPrice.compareTo(b.sellingPrice),
+        _SortField.stock => a.currentStock.compareTo(b.currentStock),
       };
       return _sortAscending ? cmp : -cmp;
     }
 
-    entries = entries.toList()..sort(compare);
+    entries = entries..sort(compare);
 
-    final totalValue = allEntries.fold(
-      0.0,
-      (sum, e) => sum + e.totalQuantity * e.product.purchasePrice,
-    );
-    final lowCount = allEntries.where((e) => e.isLowSomewhere).length;
+    final stockValue = all.fold(0.0, (sum, p) => sum + p.stockValueAtCost);
+    final attentionCount = all.where((p) => p.isLowStock || p.isOutOfStock).length;
 
     return Scaffold(
       body: SingleChildScrollView(
@@ -101,24 +112,32 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
           children: [
             SectionHeader(
               title: 'Products',
-              subtitle: '${allEntries.length} SKU(s) stocked in this scope',
-              badge: const MockDataBadge(),
+              subtitle: subtitle,
               actions: [
                 OutlinedButton.icon(
                   onPressed: () => showDialog(
                     context: context,
-                    builder: (_) => const BulkImportDialog(),
+                    builder: (_) => const CatalogManagerDialog(),
                   ),
-                  icon: const Icon(Icons.upload_file_outlined, size: 18),
-                  label: const Text('Import from Excel'),
+                  icon: const Icon(Icons.category_outlined, size: 18),
+                  label: const Text('Categories & units'),
                 ),
-                ElevatedButton.icon(
-                  onPressed: () => showDialog(
-                    context: context,
-                    builder: (_) => const ProductFormDialog(),
+                Tooltip(
+                  message: !canWrite
+                      ? "Your role can't add products"
+                      : atProductCap
+                          ? 'Your plan has reached its product limit — archive one to free a slot'
+                          : '',
+                  child: ElevatedButton.icon(
+                    onPressed: (!canWrite || atProductCap)
+                        ? null
+                        : () => showDialog(
+                              context: context,
+                              builder: (_) => const ProductFormDialog(),
+                            ),
+                    icon: const Icon(Icons.add, size: 18),
+                    label: const Text('Add product'),
                   ),
-                  icon: const Icon(Icons.add, size: 18),
-                  label: const Text('Add product'),
                 ),
               ],
             ),
@@ -135,34 +154,26 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
               itemCount: 3,
               itemBuilder: (context, index) => switch (index) {
                 0 => StatCard(
-                    label: 'SKUs in scope',
-                    value: '${allEntries.length}',
+                    label: 'Products',
+                    value: '${all.length}',
                     icon: Icons.inventory_2_outlined,
                   ),
                 1 => StatCard(
-                    label: 'Catalog value in scope',
-                    value: currencyFormat.format(totalValue),
-                    caption: 'At purchase cost',
+                    label: 'Stock value',
+                    value: currencyFormat.format(stockValue),
+                    caption: 'On hand, at purchase cost',
                     icon: Icons.payments_outlined,
                   ),
                 _ => StatCard(
-                    label: 'Low stock in scope',
-                    value: '$lowCount',
+                    label: 'Needs attention',
+                    value: '$attentionCount',
+                    caption: 'Low or out of stock',
                     icon: Icons.warning_amber_outlined,
-                    accentColor: lowCount > 0 ? theme.colorScheme.error : null,
+                    accentColor: attentionCount > 0 ? theme.colorScheme.error : null,
                   ),
               },
             ),
             const SizedBox(height: 20),
-            // A single Wrap for the whole toolbar, `WarehouseSelector`
-            // included — this used to pin the selector to the right via
-            // `Row(Expanded(Wrap(...)), WarehouseSelector)`, but that Row
-            // overflows the instant its non-flexible children (the
-            // selector's own natural width, which varies with warehouse
-            // name length) alone exceed what's left after page padding at
-            // narrow widths. A Row's Expanded child can never overflow —
-            // only its fixed siblings can — so the safest fix is to give
-            // the selector nothing to overflow *out of*.
             Wrap(
               spacing: 10,
               runSpacing: 10,
@@ -170,7 +181,8 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
               children: [
                 ToolbarSearchField(
                   controller: _searchController,
-                  hintText: 'Search by name or SKU…',
+                  hintText: 'Search name, SKU, brand or barcode…',
+                  width: 300,
                   onChanged: (value) => setState(() => _search = value),
                 ),
                 _CategoryChip(
@@ -185,77 +197,89 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                     selected: _categoryFilter == category,
                     onTap: () => setState(() => _categoryFilter = category),
                   ),
-                const WarehouseSelector(),
               ],
             ),
             const SizedBox(height: 16),
-            entries.isEmpty
-                ? _EmptyState(hasFilters: _search.isNotEmpty || _categoryFilter != null)
-                : Card(
-                    clipBehavior: Clip.antiAlias,
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: DataTable(
-                        headingRowColor: WidgetStateProperty.all(
-                          theme.colorScheme.onSurface.withValues(alpha: 0.03),
-                        ),
-                        columns: [
-                          const DataColumn(label: Text('SKU')),
-                          DataColumn(
-                            label: _SortableHeader(
-                              label: 'Name',
-                              active: _sortField == _SortField.name,
-                              ascending: _sortAscending,
-                              onTap: () => _onSort(_SortField.name),
-                            ),
-                          ),
-                          DataColumn(
-                            label: _SortableHeader(
-                              label: 'Category',
-                              active: _sortField == _SortField.category,
-                              ascending: _sortAscending,
-                              onTap: () => _onSort(_SortField.category),
-                            ),
-                          ),
-                          const DataColumn(label: Text('UoM')),
-                          DataColumn(
-                            label: _SortableHeader(
-                              label: 'Purchase price',
-                              active: _sortField == _SortField.purchasePrice,
-                              ascending: _sortAscending,
-                              onTap: () => _onSort(_SortField.purchasePrice),
-                            ),
-                            numeric: true,
-                          ),
-                          DataColumn(
-                            label: _SortableHeader(
-                              label: 'Selling price',
-                              active: _sortField == _SortField.sellingPrice,
-                              ascending: _sortAscending,
-                              onTap: () => _onSort(_SortField.sellingPrice),
-                            ),
-                            numeric: true,
-                          ),
-                          DataColumn(
-                            label: _SortableHeader(
-                              label: 'Stock',
-                              active: _sortField == _SortField.stock,
-                              ascending: _sortAscending,
-                              onTap: () => _onSort(_SortField.stock),
-                            ),
-                            numeric: true,
-                          ),
-                          if (isAllWarehouses) const DataColumn(label: Text('In')),
-                          const DataColumn(label: Text('Status')),
-                          const DataColumn(label: Text('')),
-                        ],
-                        rows: [
-                          for (var i = 0; i < entries.length; i++)
-                            _buildRow(context, ref, entries[i], i, isAllWarehouses, theme),
-                        ],
-                      ),
+            if (productsState.isLoading && !productsState.hasValue)
+              const LoadingPanel(label: 'Loading products…')
+            else if (productsState.hasError && !productsState.hasValue)
+              ErrorRetryCard(
+                error: productsState.error!,
+                onRetry: () => ref.read(productsProvider.notifier).refresh(),
+              )
+            else if (entries.isEmpty)
+              _EmptyState(
+                hasFilters: _search.isNotEmpty || _categoryFilter != null,
+                canAdd: canWrite && !atProductCap,
+              )
+            else
+              Card(
+                clipBehavior: Clip.antiAlias,
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: DataTable(
+                    dataRowMinHeight: 56,
+                    dataRowMaxHeight: 64,
+                    headingRowColor: WidgetStateProperty.all(
+                      theme.colorScheme.onSurface.withValues(alpha: 0.03),
                     ),
+                    columns: [
+                      DataColumn(
+                        label: _SortableHeader(
+                          label: 'Product',
+                          active: _sortField == _SortField.name,
+                          ascending: _sortAscending,
+                          onTap: () => _onSort(_SortField.name),
+                        ),
+                      ),
+                      const DataColumn(label: Text('SKU')),
+                      DataColumn(
+                        label: _SortableHeader(
+                          label: 'Category',
+                          active: _sortField == _SortField.category,
+                          ascending: _sortAscending,
+                          onTap: () => _onSort(_SortField.category),
+                        ),
+                      ),
+                      const DataColumn(label: Text('Unit')),
+                      DataColumn(
+                        label: _SortableHeader(
+                          label: 'Purchase price',
+                          active: _sortField == _SortField.purchasePrice,
+                          ascending: _sortAscending,
+                          onTap: () => _onSort(_SortField.purchasePrice),
+                        ),
+                        numeric: true,
+                      ),
+                      DataColumn(
+                        label: _SortableHeader(
+                          label: 'Selling price',
+                          active: _sortField == _SortField.sellingPrice,
+                          ascending: _sortAscending,
+                          onTap: () => _onSort(_SortField.sellingPrice),
+                        ),
+                        numeric: true,
+                      ),
+                      DataColumn(
+                        label: _SortableHeader(
+                          label: 'Stock',
+                          active: _sortField == _SortField.stock,
+                          ascending: _sortAscending,
+                          onTap: () => _onSort(_SortField.stock),
+                        ),
+                        numeric: true,
+                      ),
+                      const DataColumn(label: Text('Status')),
+                      const DataColumn(label: Text('')),
+                    ],
+                    rows: [
+                      for (var i = 0; i < entries.length; i++)
+                        _buildRow(context, entries[i], i, theme,
+                            canWrite: canWrite, canArchive: canArchive),
+                    ],
                   ),
+                ),
+              ),
           ],
         ),
       ),
@@ -264,12 +288,15 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
 
   DataRow _buildRow(
     BuildContext context,
-    WidgetRef ref,
-    ProductWithStock entry,
+    Product product,
     int index,
-    bool isAllWarehouses,
-    ThemeData theme,
-  ) {
+    ThemeData theme, {
+    required bool canWrite,
+    required bool canArchive,
+  }) {
+    final reference = product.maxStock ??
+        [product.minStock * 3, product.currentStock, 1].reduce((a, b) => a > b ? a : b);
+
     return DataRow(
       color: WidgetStateProperty.resolveWith((states) {
         if (states.contains(WidgetState.hovered)) {
@@ -278,41 +305,48 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
         return index.isOdd ? theme.colorScheme.onSurface.withValues(alpha: 0.025) : null;
       }),
       cells: [
-        DataCell(Text(entry.product.sku)),
-        DataCell(Text(entry.product.name)),
-        DataCell(CategoryTag(category: entry.product.category)),
-        DataCell(Text(entry.product.unitOfMeasure)),
-        DataCell(Text(currencyFormat.format(entry.product.purchasePrice))),
-        DataCell(Text(currencyFormat.format(entry.product.sellingPrice))),
+        DataCell(_ProductCell(product: product)),
+        DataCell(Text(product.sku)),
+        DataCell(
+          product.category == null
+              ? const Text('—')
+              : CategoryTag(category: product.category!),
+        ),
+        DataCell(Text(product.unit)),
+        DataCell(Text(currencyFormat.format(product.purchasePrice))),
+        DataCell(Text(currencyFormat.format(product.sellingPrice))),
         DataCell(
           StockLevelBar(
-            quantity: entry.totalQuantity,
-            referenceMax: entry.referenceThreshold * 3,
-            isLow: entry.isLowSomewhere,
+            quantity: product.currentStock,
+            referenceMax: reference,
+            isLow: product.isLowStock || product.isOutOfStock,
           ),
         ),
-        if (isAllWarehouses) DataCell(Text('${entry.stockedWarehouseCount}')),
         DataCell(
-          entry.isLowSomewhere
-              ? const StatusPill(label: 'Low stock', tone: StatusTone.negative)
-              : const StatusPill(label: 'In stock', tone: StatusTone.positive),
+          product.isOutOfStock
+              ? const StatusPill(label: 'Out of stock', tone: StatusTone.negative)
+              : product.isLowStock
+                  ? const StatusPill(label: 'Low stock', tone: StatusTone.warning)
+                  : const StatusPill(label: 'In stock', tone: StatusTone.positive),
         ),
         DataCell(
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               IconButton(
-                tooltip: 'Edit',
+                tooltip: canWrite ? 'Edit' : "Your role can't edit products",
                 icon: const Icon(Icons.edit_outlined, size: 18),
-                onPressed: () => showDialog(
-                  context: context,
-                  builder: (_) => EditProductDialog(product: entry.product),
-                ),
+                onPressed: !canWrite
+                    ? null
+                    : () => showDialog(
+                          context: context,
+                          builder: (_) => ProductFormDialog(product: product),
+                        ),
               ),
               IconButton(
-                tooltip: 'Delete',
-                icon: const Icon(Icons.delete_outline, size: 18),
-                onPressed: () => _confirmDelete(context, ref, entry),
+                tooltip: canArchive ? 'Archive' : "Your role can't archive products",
+                icon: const Icon(Icons.archive_outlined, size: 18),
+                onPressed: !canArchive ? null : () => _confirmArchive(context, product),
               ),
             ],
           ),
@@ -321,14 +355,14 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
     );
   }
 
-  void _confirmDelete(BuildContext context, WidgetRef ref, ProductWithStock entry) {
+  void _confirmArchive(BuildContext context, Product product) {
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Delete product?'),
+        title: const Text('Archive product?'),
         content: Text(
-          '${entry.product.name} will be removed from the catalog and from every '
-          "warehouse's stock. This can't be undone.",
+          '${product.name} will disappear from the product list. Its stock history is '
+          'kept and its SKU stays reserved. Archiving frees one product slot on your plan.',
         ),
         actions: [
           TextButton(
@@ -336,12 +370,77 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
             child: const Text('Cancel'),
           ),
           ElevatedButton(
-            onPressed: () {
-              ref.read(productsProvider.notifier).removeProduct(entry.product.id);
-              ref.read(warehouseStockProvider.notifier).removeProduct(entry.product.id);
+            onPressed: () async {
               Navigator.of(dialogContext).pop();
+              try {
+                await ref.read(productsProvider.notifier).archive(product.id);
+              } catch (e) {
+                if (context.mounted) showErrorSnack(context, e);
+              }
             },
-            child: const Text('Delete'),
+            child: const Text('Archive'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProductCell extends StatelessWidget {
+  const _ProductCell({required this.product});
+
+  final Product product;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 260),
+      child: Row(
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: Container(
+              width: 38,
+              height: 38,
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.06),
+              alignment: Alignment.center,
+              child: product.imageUrl == null
+                  ? Icon(
+                      Icons.inventory_2_outlined,
+                      size: 18,
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.35),
+                    )
+                  : Image.network(
+                      product.imageUrl!,
+                      width: 38,
+                      height: 38,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) => const Icon(Icons.broken_image_outlined, size: 18),
+                    ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Flexible(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  product.name,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                if (product.brand != null)
+                  Text(
+                    product.brand!,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.55),
+                    ),
+                  ),
+              ],
+            ),
           ),
         ],
       ),
@@ -412,7 +511,9 @@ class _CategoryChip extends StatelessWidget {
           color: selected ? chipColor.withValues(alpha: 0.16) : theme.colorScheme.surface,
           borderRadius: BorderRadius.circular(999),
           border: Border.all(
-            color: selected ? chipColor.withValues(alpha: 0.5) : theme.colorScheme.onSurface.withValues(alpha: 0.15),
+            color: selected
+                ? chipColor.withValues(alpha: 0.5)
+                : theme.colorScheme.onSurface.withValues(alpha: 0.15),
           ),
         ),
         child: Text(
@@ -429,9 +530,10 @@ class _CategoryChip extends StatelessWidget {
 }
 
 class _EmptyState extends StatelessWidget {
-  const _EmptyState({required this.hasFilters});
+  const _EmptyState({required this.hasFilters, required this.canAdd});
 
   final bool hasFilters;
+  final bool canAdd;
 
   @override
   Widget build(BuildContext context) {
@@ -452,7 +554,9 @@ class _EmptyState extends StatelessWidget {
               Text(
                 hasFilters
                     ? 'No products match your search or filter.'
-                    : 'Nothing stocked in this warehouse yet.',
+                    : canAdd
+                        ? 'No products yet. Use "Add product" to create your first one.'
+                        : 'No products yet.',
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
                 ),

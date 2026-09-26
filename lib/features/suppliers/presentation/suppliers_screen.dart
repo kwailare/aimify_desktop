@@ -2,21 +2,20 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/utils/formatters.dart';
-import '../../../shared/widgets/mock_data_badge.dart';
+import '../../../shared/widgets/local_only_badge.dart';
 import '../../../shared/widgets/section_header.dart';
 import '../../../shared/widgets/status_pill.dart';
-import '../../../shared/widgets/warehouse/warehouse_selector.dart';
 import '../data/suppliers_repository.dart';
 import 'supplier_form_dialog.dart';
 
-/// UI-only for now: reads from the MOCK [scopedSuppliersProvider] — see
-/// that file for the per-warehouse scoping every module here shares.
+/// LOCAL ONLY: suppliers have no backend yet (see `docs/desktop-api.md`),
+/// so this screen works on this computer for the current session.
 class SuppliersScreen extends ConsumerWidget {
   const SuppliersScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final suppliers = ref.watch(scopedSuppliersProvider);
+    final suppliers = ref.watch(suppliersProvider);
 
     return Scaffold(
       body: Padding(
@@ -27,10 +26,8 @@ class SuppliersScreen extends ConsumerWidget {
             SectionHeader(
               title: 'Suppliers',
               subtitle: '${suppliers.length} suppliers on file',
-              badge: const MockDataBadge(),
+              badge: const LocalOnlyBadge(),
               actions: [
-                const WarehouseSelector(),
-                const SizedBox(width: 8),
                 ElevatedButton.icon(
                   onPressed: () => showDialog(
                     context: context,
@@ -42,7 +39,16 @@ class SuppliersScreen extends ConsumerWidget {
               ],
             ),
             const SizedBox(height: 20),
-            Expanded(
+            if (suppliers.isEmpty)
+              const Expanded(
+                child: Card(
+                  child: Center(
+                    child: Text('No suppliers yet. Use "Add supplier" to add one.'),
+                  ),
+                ),
+              )
+            else
+              Expanded(
               child: Card(
                 clipBehavior: Clip.antiAlias,
                 child: SingleChildScrollView(

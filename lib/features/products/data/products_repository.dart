@@ -1,79 +1,119 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/constants/api_constants.dart';
+import '../../../shared/services/authed_api.dart';
+import '../../auth/presentation/auth_controller.dart';
 import '../domain/product.dart';
 
-/// MOCK repository — in-memory only, seeded with obviously-fake sample
-/// data (`SAMPLE-...` SKUs). There is no `/api/v1/products` endpoint on
-/// aimify-web yet, so nothing here survives an app restart. This class is
-/// the single seam to replace with a real HTTP-backed repository later:
-/// the screen only depends on [productsProvider]'s shape, not on how the
-/// list is sourced.
-///
-/// Catalog only — no stock quantity here. On-hand stock is tracked per
-/// warehouse; see `warehouse_stock_repository.dart`.
-class ProductsNotifier extends Notifier<List<Product>> {
-  @override
-  List<Product> build() => const [
-        Product(
-          id: 'p1',
-          sku: 'SAMPLE-SKU-001',
-          barcode: '6009999000011',
-          name: '50kg Bag of Rice',
-          category: 'Grains',
-          unitOfMeasure: 'Bag',
-          purchasePrice: 32000,
-          sellingPrice: 38500,
-        ),
-        Product(
-          id: 'p2',
-          sku: 'SAMPLE-SKU-002',
-          barcode: '6009999000028',
-          name: '25L Vegetable Oil',
-          category: 'Cooking Oil',
-          unitOfMeasure: 'Jerrican',
-          purchasePrice: 21000,
-          sellingPrice: 25500,
-        ),
-        Product(
-          id: 'p3',
-          sku: 'SAMPLE-SKU-003',
-          barcode: '6009999000035',
-          name: 'Carton of Bottled Water (24pk)',
-          category: 'Beverages',
-          unitOfMeasure: 'Carton',
-          purchasePrice: 1800,
-          sellingPrice: 2400,
-        ),
-        Product(
-          id: 'p4',
-          sku: 'SAMPLE-SKU-004',
-          barcode: '6009999000042',
-          name: '1kg Sugar Pack',
-          category: 'Groceries',
-          unitOfMeasure: 'Pack',
-          purchasePrice: 1200,
-          sellingPrice: 1550,
-        ),
-        Product(
-          id: 'p5',
-          sku: 'SAMPLE-SKU-005',
-          barcode: '6009999000059',
-          name: 'Carton of Detergent (12pk)',
-          category: 'Household',
-          unitOfMeasure: 'Carton',
-          purchasePrice: 9500,
-          sellingPrice: 12000,
-        ),
-      ];
+/// REAL `/api/v1/products` — list, create, edit, archive, and the image
+/// upload/remove endpoints. Archiving (not deleting) keeps a product's
+/// stock history intact; the API hides archived products from the list.
+class ProductsRepository {
+  ProductsRepository(this._api);
 
-  void addProduct(Product product) => state = [...state, product];
+  final AuthedApi _api;
 
-  void updateProduct(Product updated) =>
-      state = [for (final p in state) if (p.id == updated.id) updated else p];
+  Future<List<Product>> list() async {
+    final json = await _api.get(ApiConstants.products);
+    return [
+      for (final row in (json['products'] as List<dynamic>? ?? const []))
+        Product.fromJson(row as Map<String, dynamic>),
+    ];
+  }
 
-  void removeProduct(String id) => state = state.where((p) => p.id != id).toList();
+  Future<Product> create(ProductInput input) async {
+    final json = await _api.post(ApiConstants.products, input.toJson());
+    return Product.fromJson(json['product'] as Map<String, dynamic>);
+  }
+
+  Future<Product> update(String id, ProductInput input) async {
+    final json = await _api.patch(ApiConstants.product(id), input.toJson());
+    return Product.fromJson(json['product'] as Map<String, dynamic>);
+  }
+
+  Future<Product> archive(String id) async {
+    final json = await _api.delete(ApiConstants.product(id));
+    return Product.fromJson((json['product'] ?? json) as Map<String, dynamic>);
+  }
+
+  /// PNG, JPEG or WebP up to 2 MB; the server checks the file's contents,
+  /// not its name. Replaces any existing picture.
+  Future<Product> uploadImage(String id, {required List<int> bytes, required String filename}) async {
+    final json = await _api.postFile(
+      ApiConstants.productImage(id),
+      field: 'image',
+      bytes: bytes,
+      filename: filename,
+    );
+    return Product.fromJson(json['product'] as Map<String, dynamic>);
+  }
+
+  Future<Product> removeImage(String id) async {
+    final json = await _api.delete(ApiConstants.productImage(id));
+    return Product.fromJson(json['product'] as Map<String, dynamic>);
+  }
 }
 
-final productsProvider = NotifierProvider<ProductsNotifier, List<Product>>(
-  ProductsNotifier.new,
+final productsRepositoryProvider = Provider<ProductsRepository>(
+  (ref) => ProductsRepository(ref.watch(authedApiProvider)),
+);
+
+class ProductsNotifier extends AsyncNotifier<List<Product>> {
+  @override
+  Future<List<Product>> build() async {
+    if (ref.watch(sessionUserIdProvider) == null) return const [];
+    return ref.watch(productsRepositoryProvider).list();
+  }
+
+  /// Re-reads the list from the server. Called after every write and after
+  /// every stock movement, since movements change `currentStock`.
+  Future<void> refresh() async {
+    state = await AsyncValue.guard(ref.read(productsRepositoryProvider).list);
+  }
+
+  Future<Product> add(ProductInput input) async {
+    final created = await ref.read(productsRepositoryProvider).create(input);
+    await refresh();
+    _refreshPlanUsage();
+    return created;
+  }
+
+  Future<Product> edit(String id, ProductInput input) async {
+    final updated = await ref.read(productsRepositoryProvider).update(id, input);
+    await refresh();
+    return updated;
+  }
+
+  Future<void> archive(String id) async {
+    await ref.read(productsRepositoryProvider).archive(id);
+    await refresh();
+    _refreshPlanUsage();
+  }
+
+  /// Creating or archiving changes the plan's product usage, which lives on
+  /// `/me` — re-read it so the "x/y products used" line and the add button's
+  /// cap check stay right.
+  void _refreshPlanUsage() => unawaited(ref.read(authControllerProvider.notifier).refresh());
+
+  Future<void> setImage(String id, {required List<int> bytes, required String filename}) async {
+    await ref.read(productsRepositoryProvider).uploadImage(id, bytes: bytes, filename: filename);
+    await refresh();
+  }
+
+  Future<void> clearImage(String id) async {
+    await ref.read(productsRepositoryProvider).removeImage(id);
+    await refresh();
+  }
+}
+
+final productsProvider =
+    AsyncNotifierProvider<ProductsNotifier, List<Product>>(ProductsNotifier.new);
+
+/// Products for anything that just needs the list — empty while loading or
+/// after a failure. Screens that show loading/error states watch
+/// [productsProvider] itself.
+final productListProvider = Provider<List<Product>>(
+  (ref) => ref.watch(productsProvider).valueOrNull ?? const [],
 );

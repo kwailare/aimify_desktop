@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 /// Consistent page header used across every module screen: title, optional
-/// subtitle, an optional [MockDataBadge]-style [badge], and a trailing
+/// subtitle, an optional [LocalOnlyBadge]-style [badge], and a trailing
 /// action slot (usually an "Add ..." button).
 ///
 /// Stacks into a column below [_narrowBreakpoint] so title/subtitle and the

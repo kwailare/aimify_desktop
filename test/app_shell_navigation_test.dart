@@ -10,8 +10,8 @@
 // This test drives real sidebar taps through the real router/app shell —
 // the exact path a dashboard-only test doesn't cover — so a regression
 // here fails loudly instead of only showing up by clicking around the
-// running app. Covers every current nav item, including the multi-
-// warehouse-era additions (Warehouses, Staff, Reports).
+// running app. Covers every current nav item, including the warehouse
+// screens (Warehouses, Reports).
 
 import 'package:aimify_desktop/app.dart';
 import 'package:aimify_desktop/features/auth/domain/auth_models.dart';
@@ -21,6 +21,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'fakes/fake_repositories.dart';
 import 'fakes/fake_token_storage.dart';
 
 class _FakeAuthController extends AuthController {
@@ -37,6 +38,16 @@ class _FakeAuthController extends AuthController {
           trialEndsAt: null,
         ),
         role: 'Owner',
+        // Full Owner permission set (see docs/desktop-api.md) — this test
+        // exercises navigation, not permission gating itself.
+        permissions: [
+          'products.write',
+          'products.archive',
+          'catalog.write',
+          'warehouses.manage',
+          'stock.out',
+          'stock.adjust',
+        ],
       );
 }
 
@@ -52,6 +63,7 @@ void main() {
         overrides: [
           secureTokenStorageProvider.overrideWithValue(FakeTokenStorage()),
           authControllerProvider.overrideWith(_FakeAuthController.new),
+          ...fakeDataOverrides(),
         ],
         child: const AimifyApp(),
       ),
@@ -71,7 +83,6 @@ void main() {
       'Expenses',
       'Credits & Debts',
       'Warehouses',
-      'Staff',
       'Reports',
       'Dashboard',
     ]) {

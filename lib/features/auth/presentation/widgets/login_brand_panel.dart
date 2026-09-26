@@ -38,9 +38,8 @@ class LoginBrandPanel extends StatelessWidget {
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  'Stock, purchases, sales and customer balances — the same '
-                  'ledger your whole team works from, kept in sync the '
-                  'moment something moves.',
+                  'Products, stock movements and low-stock alerts — one live '
+                  'ledger for your whole team, straight from your Aimify account.',
                   style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.68),
                     fontSize: 14.5,

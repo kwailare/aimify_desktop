@@ -80,15 +80,24 @@ class DashboardHero extends StatelessWidget {
             ],
           );
 
-          final statusBlock = me.hasCompletedOnboarding
-              ? _OrgStatusPanel(
-                  orgName: me.organization!.name,
-                  warehouseName: me.organization!.warehouseName,
-                  role: me.role!,
-                  subscriptionStatus: me.organization!.subscriptionStatus,
-                  trialEndsAt: me.organization!.trialEndsAt,
+          // Email confirmation gates creating an organization at all, so a
+          // false `emailVerified` is the more specific — and more
+          // actionable — reason to show when both are true, rather than
+          // the generic "no organization yet" message.
+          final statusBlock = !me.user.emailVerified
+              ? const _OnboardingChip(
+                  message: 'Confirm your email — check your inbox for the link Aimify sent '
+                      'you, then come back here.',
                 )
-              : const _OnboardingChip();
+              : me.hasCompletedOnboarding
+                  ? _OrgStatusPanel(
+                      orgName: me.organization!.name,
+                      warehouseName: me.organization!.warehouseName,
+                      role: me.role!,
+                      subscriptionStatus: me.organization!.subscriptionStatus,
+                      trialEndsAt: me.organization!.trialEndsAt,
+                    )
+                  : const _OnboardingChip();
 
           if (narrow) {
             return Column(
@@ -129,7 +138,7 @@ class _OrgStatusPanel extends StatelessWidget {
   });
 
   final String orgName;
-  final String warehouseName;
+  final String? warehouseName;
   final String role;
   final String subscriptionStatus;
   final DateTime? trialEndsAt;
@@ -139,8 +148,13 @@ class _OrgStatusPanel extends StatelessWidget {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final isTrial = subscriptionStatus.toLowerCase() == 'trial';
+    // `past_due` is the only other status this panel ever sees — every
+    // other value routes to `SubscriptionLockedScreen` before the dashboard
+    // renders at all (see `Organization.isLocked`).
+    final isPastDue = subscriptionStatus.toLowerCase() == 'past_due';
     const warning = Color(0xFFD1453B);
     const success = Color(0xFF2F8F5B);
+    final statusColor = (isTrial || isPastDue) ? warning : success;
 
     // Trial length isn't returned by the API — only the end date is. This
     // bar assumes a 14-day trial purely to give the countdown a visual
@@ -176,13 +190,15 @@ class _OrgStatusPanel extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
                 decoration: BoxDecoration(
-                  color: (isTrial ? warning : success).withValues(alpha: 0.14),
+                  color: statusColor.withValues(alpha: 0.14),
                   borderRadius: BorderRadius.circular(999),
                 ),
                 child: Text(
-                  subscriptionStatus[0].toUpperCase() + subscriptionStatus.substring(1),
+                  isPastDue
+                      ? 'Past due'
+                      : subscriptionStatus[0].toUpperCase() + subscriptionStatus.substring(1),
                   style: TextStyle(
-                    color: isTrial ? warning : success,
+                    color: statusColor,
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
                   ),
@@ -192,11 +208,18 @@ class _OrgStatusPanel extends StatelessWidget {
           ),
           const SizedBox(height: 3),
           Text(
-            '$warehouseName · $role',
+            warehouseName == null ? role : '$warehouseName · $role',
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
             ),
           ),
+          if (isPastDue) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Your last payment failed — update billing to avoid losing access.',
+              style: theme.textTheme.bodySmall?.copyWith(color: warning, fontSize: 11),
+            ),
+          ],
           if (trialProgress != null && daysLeft != null) ...[
             const SizedBox(height: 12),
             ClipRRect(
@@ -223,11 +246,17 @@ class _OrgStatusPanel extends StatelessWidget {
   }
 }
 
-/// Shown when `/api/v1/me` returns `organization: null` — the user hasn't
-/// finished onboarding on aimify-web yet. A normal, expected state per the
-/// API contract, not an error.
+/// Shown when `/api/v1/me` returns `organization: null` — either the user
+/// hasn't finished onboarding on aimify-web yet, or (per [message]) their
+/// email isn't confirmed, which is *why* organization is null: an
+/// unconfirmed account can't create one. Either way, a normal, expected
+/// state per the API contract, not an error.
 class _OnboardingChip extends StatelessWidget {
-  const _OnboardingChip();
+  const _OnboardingChip({
+    this.message = 'Finish setup on the Aimify website to unlock your org',
+  });
+
+  final String message;
 
   @override
   Widget build(BuildContext context) {
@@ -244,7 +273,7 @@ class _OnboardingChip extends StatelessWidget {
         children: [
           Icon(Icons.info_outline, color: theme.colorScheme.secondary, size: 20),
           const SizedBox(width: 10),
-          const Flexible(child: Text('Finish setup on the Aimify website to unlock your org')),
+          Flexible(child: Text(message)),
         ],
       ),
     );
