@@ -2,13 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/utils/formatters.dart';
-import '../../../shared/widgets/mock_data_badge.dart';
+import '../../../shared/widgets/local_only_badge.dart';
 import '../../../shared/widgets/section_header.dart';
 import '../data/expenses_repository.dart';
 import '../domain/expense.dart';
 import 'expense_form_dialog.dart';
 
-/// UI-only for now: reads from the MOCK [expensesProvider].
+/// LOCAL ONLY: expenses have no backend yet (see `docs/desktop-api.md`),
+/// so this screen works on this computer for the current session.
 class ExpensesScreen extends ConsumerWidget {
   const ExpensesScreen({super.key});
 
@@ -25,7 +26,7 @@ class ExpensesScreen extends ConsumerWidget {
             SectionHeader(
               title: 'Expenses',
               subtitle: '${expenses.length} recorded expenses',
-              badge: const MockDataBadge(),
+              badge: const LocalOnlyBadge(),
               actions: [
                 ElevatedButton.icon(
                   onPressed: () => showDialog(
@@ -38,7 +39,16 @@ class ExpensesScreen extends ConsumerWidget {
               ],
             ),
             const SizedBox(height: 20),
-            Expanded(
+            if (expenses.isEmpty)
+              const Expanded(
+                child: Card(
+                  child: Center(
+                    child: Text('No expenses recorded yet. Use "Add expense" to add one.'),
+                  ),
+                ),
+              )
+            else
+              Expanded(
               child: Card(
                 clipBehavior: Clip.antiAlias,
                 child: SingleChildScrollView(

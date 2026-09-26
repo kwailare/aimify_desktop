@@ -18,6 +18,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'fakes/fake_repositories.dart';
+
 class _FakeAuthController extends AuthController {
   @override
   Future<MeResponse?> build() async => const MeResponse(
@@ -32,6 +34,16 @@ class _FakeAuthController extends AuthController {
           trialEndsAt: null,
         ),
         role: 'Owner',
+        // Full Owner permission set (see docs/desktop-api.md) — this test
+        // exercises dashboard layout, not permission gating itself.
+        permissions: [
+          'products.write',
+          'products.archive',
+          'catalog.write',
+          'warehouses.manage',
+          'stock.out',
+          'stock.adjust',
+        ],
       );
 }
 
@@ -45,7 +57,10 @@ void main() {
 
       await tester.pumpWidget(
         ProviderScope(
-          overrides: [authControllerProvider.overrideWith(_FakeAuthController.new)],
+          overrides: [
+            authControllerProvider.overrideWith(_FakeAuthController.new),
+            ...fakeDataOverrides(),
+          ],
           child: MaterialApp(
             theme: AppTheme.light(),
             home: const DashboardScreen(),

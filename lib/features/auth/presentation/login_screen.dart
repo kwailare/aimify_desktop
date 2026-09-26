@@ -2,9 +2,9 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../../shared/services/api_exception.dart';
+import '../../../shared/services/authed_api.dart';
 import '../../../shared/widgets/aimify_wordmark.dart';
 import 'auth_controller.dart';
 import 'widgets/login_brand_panel.dart';
@@ -12,6 +12,10 @@ import 'widgets/login_brand_panel.dart';
 /// Real, network-backed login screen — calls `POST /api/v1/auth/login` via
 /// [AuthController.login]. On success, the router's redirect (see
 /// `core/router/app_router.dart`) takes the user to the dashboard.
+///
+/// Handles two-factor authentication: a correct password on an account with
+/// 2FA on gets a `two_factor_required` error with no token, so this screen
+/// swaps to a 6-digit-code step and resubmits with `code` once entered.
 ///
 /// Split-screen layout above [_wideBreakpoint]: a dark illustrated brand
 /// panel ([LoginBrandPanel]) paired with a glass-morphism form card. Below
@@ -29,6 +33,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _codeController = TextEditingController();
 
   late final AnimationController _entrance;
   late final Animation<double> _fade;
@@ -36,6 +41,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
 
   bool _obscurePassword = true;
   bool _isSubmitting = false;
+  bool _needsTwoFactor = false;
   String? _errorMessage;
 
   static const _wideBreakpoint = 900.0;
@@ -51,6 +57,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     _slide = Tween<Offset>(begin: const Offset(0, 0.04), end: Offset.zero)
         .animate(CurvedAnimation(parent: _entrance, curve: Curves.easeOutCubic));
     _entrance.forward();
+
+    // A session that ended on its own (revoked from the website, removed
+    // from the team, ...) lands here with a short explanation, shown once.
+    final endedMessage = ref.read(sessionEndedMessageProvider);
+    if (endedMessage != null) {
+      _errorMessage = endedMessage;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) ref.read(sessionEndedMessageProvider.notifier).state = null;
+      });
+    }
   }
 
   @override
@@ -58,11 +74,25 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     _entrance.dispose();
     _emailController.dispose();
     _passwordController.dispose();
+    _codeController.dispose();
     super.dispose();
   }
 
+  void _backToCredentials() {
+    setState(() {
+      _needsTwoFactor = false;
+      _codeController.clear();
+      _errorMessage = null;
+    });
+  }
+
   Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
+    if (!_needsTwoFactor) {
+      if (!_formKey.currentState!.validate()) return;
+    } else if (_codeController.text.trim().isEmpty) {
+      setState(() => _errorMessage = 'Enter your 6-digit code, or a backup code');
+      return;
+    }
 
     setState(() {
       _isSubmitting = true;
@@ -73,9 +103,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
       await ref.read(authControllerProvider.notifier).login(
             email: _emailController.text.trim(),
             password: _passwordController.text,
+            code: _needsTwoFactor ? _codeController.text.trim() : null,
           );
     } on ApiException catch (e) {
-      setState(() => _errorMessage = e.message);
+      if (e.isTwoFactorRequired) {
+        setState(() => _needsTwoFactor = true);
+      } else if (e.isRateLimited) {
+        // Per docs/desktop-api.md: wrong passwords/codes are rate limited.
+        // Never auto-retry — just tell the person to wait and let them
+        // decide when to try again.
+        setState(() => _errorMessage = 'Too many attempts. Try again in a few minutes.');
+      } else {
+        setState(() => _errorMessage = e.message);
+      }
     } catch (_) {
       setState(
         () => _errorMessage =
@@ -115,6 +155,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                       formKey: _formKey,
                       emailController: _emailController,
                       passwordController: _passwordController,
+                      codeController: _codeController,
                       obscurePassword: _obscurePassword,
                       onToggleObscure: () =>
                           setState(() => _obscurePassword = !_obscurePassword),
@@ -122,6 +163,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                       errorMessage: _errorMessage,
                       onSubmit: _submit,
                       showCompactBrand: !isWide,
+                      needsTwoFactor: _needsTwoFactor,
+                      onBackToCredentials: _backToCredentials,
                     ),
                   ),
                 ),
@@ -148,23 +191,29 @@ class _LoginFormCard extends StatelessWidget {
     required this.formKey,
     required this.emailController,
     required this.passwordController,
+    required this.codeController,
     required this.obscurePassword,
     required this.onToggleObscure,
     required this.isSubmitting,
     required this.errorMessage,
     required this.onSubmit,
     required this.showCompactBrand,
+    required this.needsTwoFactor,
+    required this.onBackToCredentials,
   });
 
   final GlobalKey<FormState> formKey;
   final TextEditingController emailController;
   final TextEditingController passwordController;
+  final TextEditingController codeController;
   final bool obscurePassword;
   final VoidCallback onToggleObscure;
   final bool isSubmitting;
   final String? errorMessage;
   final VoidCallback onSubmit;
   final bool showCompactBrand;
+  final bool needsTwoFactor;
+  final VoidCallback onBackToCredentials;
 
   @override
   Widget build(BuildContext context) {
@@ -207,7 +256,7 @@ class _LoginFormCard extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        'WELCOME BACK',
+                        needsTwoFactor ? 'VERIFICATION REQUIRED' : 'WELCOME BACK',
                         style: TextStyle(
                           color: gold,
                           fontSize: 11.5,
@@ -217,50 +266,72 @@ class _LoginFormCard extends StatelessWidget {
                       ),
                       const SizedBox(height: 10),
                       Text(
-                        'Sign in to your warehouse',
+                        needsTwoFactor
+                            ? 'Enter your authentication code'
+                            : 'Sign in to your warehouse',
                         style: theme.textTheme.headlineSmall?.copyWith(
                           fontWeight: FontWeight.w700,
                         ),
                       ),
-                      const SizedBox(height: 28),
-                      _BrandTextField(
-                        controller: emailController,
-                        label: 'Email',
-                        icon: Icons.mail_outline,
-                        keyboardType: TextInputType.emailAddress,
-                        autofillHints: const [AutofillHints.email],
-                        validator: (value) {
-                          if (value == null || value.trim().isEmpty) {
-                            return 'Enter your email address';
-                          }
-                          if (!value.contains('@')) return 'Enter a valid email address';
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 16),
-                      _BrandTextField(
-                        controller: passwordController,
-                        label: 'Password',
-                        icon: Icons.lock_outline,
-                        obscureText: obscurePassword,
-                        autofillHints: const [AutofillHints.password],
-                        onFieldSubmitted: (_) => onSubmit(),
-                        suffixIcon: IconButton(
-                          icon: Icon(
-                            obscurePassword
-                                ? Icons.visibility_outlined
-                                : Icons.visibility_off_outlined,
-                            size: 20,
+                      if (needsTwoFactor) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          'Enter the 6-digit code from your authenticator app, or one of '
+                          'your backup codes.',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurface.withValues(alpha: 0.65),
                           ),
-                          onPressed: onToggleObscure,
                         ),
-                        validator: (value) {
-                          if (value == null || value.isEmpty) {
-                            return 'Enter your password';
-                          }
-                          return null;
-                        },
-                      ),
+                      ],
+                      const SizedBox(height: 28),
+                      if (!needsTwoFactor) ...[
+                        _BrandTextField(
+                          controller: emailController,
+                          label: 'Email',
+                          icon: Icons.mail_outline,
+                          keyboardType: TextInputType.emailAddress,
+                          autofillHints: const [AutofillHints.email],
+                          validator: (value) {
+                            if (value == null || value.trim().isEmpty) {
+                              return 'Enter your email address';
+                            }
+                            if (!value.contains('@')) return 'Enter a valid email address';
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        _BrandTextField(
+                          controller: passwordController,
+                          label: 'Password',
+                          icon: Icons.lock_outline,
+                          obscureText: obscurePassword,
+                          autofillHints: const [AutofillHints.password],
+                          onFieldSubmitted: (_) => onSubmit(),
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              obscurePassword
+                                  ? Icons.visibility_outlined
+                                  : Icons.visibility_off_outlined,
+                              size: 20,
+                            ),
+                            onPressed: onToggleObscure,
+                          ),
+                          validator: (value) {
+                            if (value == null || value.isEmpty) {
+                              return 'Enter your password';
+                            }
+                            return null;
+                          },
+                        ),
+                      ] else
+                        _BrandTextField(
+                          controller: codeController,
+                          label: '6-digit code or backup code',
+                          icon: Icons.security_outlined,
+                          keyboardType: TextInputType.text,
+                          autofillHints: const [AutofillHints.oneTimeCode],
+                          onFieldSubmitted: (_) => onSubmit(),
+                        ),
                       if (errorMessage != null) ...[
                         const SizedBox(height: 16),
                         Container(
@@ -288,23 +359,29 @@ class _LoginFormCard extends StatelessWidget {
                         ),
                       ],
                       const SizedBox(height: 26),
-                      _GradientSubmitButton(isBusy: isSubmitting, onPressed: onSubmit),
+                      _GradientSubmitButton(
+                        isBusy: isSubmitting,
+                        onPressed: onSubmit,
+                        label: needsTwoFactor ? 'Verify' : 'Sign in',
+                      ),
                       const SizedBox(height: 20),
-                      Text(
-                        "Don't have an account? Sign up at the Aimify website first, "
-                        'then come back here to sign in.',
-                        textAlign: TextAlign.center,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                      if (needsTwoFactor)
+                        Center(
+                          child: TextButton(
+                            onPressed: isSubmitting ? null : onBackToCredentials,
+                            child: const Text('Back to sign in'),
+                          ),
+                        )
+                      else ...[
+                        Text(
+                          "Don't have an account? Sign up at the Aimify website first, "
+                          'then come back here to sign in.',
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 2),
-                      Center(
-                        child: TextButton(
-                          onPressed: () => context.push('/credits'),
-                          child: const Text('Credits'),
-                        ),
-                      ),
+                      ],
                     ],
                   ),
                 ),
@@ -382,10 +459,15 @@ class _BrandTextField extends StatelessWidget {
 /// a real desktop cursor (there's no touch-equivalent, so this is purely a
 /// pointer/desktop enhancement, not something the mobile phase can reuse).
 class _GradientSubmitButton extends StatefulWidget {
-  const _GradientSubmitButton({required this.isBusy, required this.onPressed});
+  const _GradientSubmitButton({
+    required this.isBusy,
+    required this.onPressed,
+    required this.label,
+  });
 
   final bool isBusy;
   final VoidCallback onPressed;
+  final String label;
 
   @override
   State<_GradientSubmitButton> createState() => _GradientSubmitButtonState();
@@ -433,7 +515,7 @@ class _GradientSubmitButtonState extends State<_GradientSubmitButton> {
                   ),
                 )
               : Text(
-                  'Sign in',
+                  widget.label,
                   style: TextStyle(
                     color: _hovering ? Colors.white : theme.scaffoldBackgroundColor,
                     fontWeight: FontWeight.w700,

@@ -5,9 +5,7 @@ import '../../../../shared/widgets/status_pill.dart';
 import '../../data/dashboard_metrics.dart';
 import '../../domain/activity_event.dart';
 
-/// Chronological merge of sales, purchases and stock movements — the
-/// closest thing to a real activity log this screen has, though it's still
-/// built entirely from MOCK module data (see `dashboard_metrics.dart`).
+/// The latest stock movements from the real ledger, newest first.
 class RecentActivityCard extends ConsumerWidget {
   const RecentActivityCard({super.key});
 
@@ -29,7 +27,7 @@ class RecentActivityCard extends ConsumerWidget {
           Text('Recent activity', style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
           const SizedBox(height: 4),
           Text(
-            'Latest sales, purchases and stock movements',
+            'The latest stock movements across your warehouses',
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSurface.withValues(alpha: 0.55),
             ),

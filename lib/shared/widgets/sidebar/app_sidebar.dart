@@ -1,17 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/theme_mode_provider.dart';
 import '../../../features/auth/presentation/auth_controller.dart';
 import '../aimify_wordmark.dart';
 
 class _NavItem {
-  const _NavItem(this.label, this.icon, this.selectedIcon);
+  const _NavItem(this.label, this.icon, this.selectedIcon, {this.localOnly = false});
 
   final String label;
   final IconData icon;
   final IconData selectedIcon;
+
+  /// True for modules with no backend yet (see `docs/desktop-api.md`) — they
+  /// work on this computer only, and the sidebar says so.
+  final bool localOnly;
 }
 
 // Order here must match the StatefulShellRoute branch order in
@@ -20,13 +23,17 @@ const navItems = [
   _NavItem('Dashboard', Icons.dashboard_outlined, Icons.dashboard),
   _NavItem('Products', Icons.inventory_2_outlined, Icons.inventory_2),
   _NavItem('Inventory', Icons.warehouse_outlined, Icons.warehouse),
-  _NavItem('Purchases', Icons.shopping_cart_outlined, Icons.shopping_cart),
-  _NavItem('Suppliers', Icons.local_shipping_outlined, Icons.local_shipping),
-  _NavItem('Customers', Icons.people_outline, Icons.people),
-  _NavItem('Expenses', Icons.receipt_long_outlined, Icons.receipt_long),
-  _NavItem('Credits & Debts', Icons.account_balance_wallet_outlined, Icons.account_balance_wallet),
+  _NavItem('Purchases', Icons.shopping_cart_outlined, Icons.shopping_cart, localOnly: true),
+  _NavItem('Suppliers', Icons.local_shipping_outlined, Icons.local_shipping, localOnly: true),
+  _NavItem('Customers', Icons.people_outline, Icons.people, localOnly: true),
+  _NavItem('Expenses', Icons.receipt_long_outlined, Icons.receipt_long, localOnly: true),
+  _NavItem(
+    'Credits & Debts',
+    Icons.account_balance_wallet_outlined,
+    Icons.account_balance_wallet,
+    localOnly: true,
+  ),
   _NavItem('Warehouses', Icons.store_outlined, Icons.store),
-  _NavItem('Staff', Icons.badge_outlined, Icons.badge),
   _NavItem('Reports', Icons.bar_chart_outlined, Icons.bar_chart),
 ];
 
@@ -150,17 +157,47 @@ class AppSidebar extends ConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   if (me != null) ...[
-                    Text(
-                      me.user.name,
-                      style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    Text(
-                      me.organization?.name ?? 'No organization yet',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
-                      ),
-                      overflow: TextOverflow.ellipsis,
+                    Row(
+                      children: [
+                        if (me.organization?.logoUrl case final String logoUrl)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(6),
+                              child: Image.network(
+                                logoUrl,
+                                width: 22,
+                                height: 22,
+                                fit: BoxFit.cover,
+                                // A broken/unreachable logo URL shouldn't
+                                // ever break the sidebar — just fall back
+                                // to no logo.
+                                errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                              ),
+                            ),
+                          ),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                me.user.name,
+                                style: theme.textTheme.bodyMedium
+                                    ?.copyWith(fontWeight: FontWeight.w700),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              Text(
+                                me.organization?.name ?? 'No organization yet',
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 10),
                   ],
@@ -182,13 +219,6 @@ class AppSidebar extends ConsumerWidget {
                           tooltip: 'Sign out',
                           onPressed: () => ref.read(authControllerProvider.notifier).logout(),
                           icon: const Icon(Icons.logout, size: 20),
-                        ),
-                      ),
-                      Expanded(
-                        child: IconButton(
-                          tooltip: 'Credits',
-                          onPressed: () => context.push('/credits'),
-                          icon: const Icon(Icons.info_outline, size: 20),
                         ),
                       ),
                     ],
@@ -265,6 +295,26 @@ class _SidebarTileState extends State<_SidebarTile> {
                       ),
                     ),
                   ),
+                  if (widget.item.localOnly)
+                    Tooltip(
+                      message: 'No online backend yet — works on this computer only',
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.onSurface.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          'LOCAL',
+                          style: TextStyle(
+                            fontSize: 8.5,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.6,
+                            color: theme.colorScheme.onSurface.withValues(alpha: 0.55),
+                          ),
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),

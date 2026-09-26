@@ -1,107 +1,86 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../inventory/data/inventory_repository.dart';
-import '../../inventory/data/warehouse_stock_repository.dart';
-import '../../inventory/domain/stock_movement.dart';
 import '../../products/data/products_repository.dart';
-import '../../purchases/data/purchases_repository.dart';
-import '../../warehouses/data/warehouses_repository.dart';
+import '../../products/domain/product.dart';
 
-/// Chart-ready aggregates for the Reports screen. All derived from the
-/// same MOCK module data as the rest of the app (products, warehouse
-/// stock, inventory movements, purchases) — see each module's
-/// `data/*_repository.dart` for the real-API swap-in seam.
+/// Chart-ready aggregates for the Reports screen, computed from the live
+/// products and stock ledger. There is no reporting or valuation endpoint
+/// on the backend yet, so valuation is current stock × price, calculated
+/// here — and the trend covers only the latest 100 movements the ledger
+/// endpoint returns.
 
-class WarehouseValueSlice {
-  const WarehouseValueSlice({required this.warehouseName, required this.value});
-  final String warehouseName;
-  final double value;
+class CategoryValue {
+  const CategoryValue({required this.category, required this.atCost, required this.atRetail});
+
+  final String category;
+  final double atCost;
+  final double atRetail;
 }
 
-/// Inventory value (at purchase cost) per warehouse — org-wide regardless
-/// of the admin's current warehouse filter, since the point of a report is
-/// to compare locations against each other.
-final inventoryValueByWarehouseProvider = Provider<List<WarehouseValueSlice>>((ref) {
-  final warehouses = ref.watch(warehousesProvider);
-  final products = {for (final p in ref.watch(productsProvider)) p.id: p};
-  final stock = ref.watch(warehouseStockProvider);
-
+/// Stock value per category (at cost and at selling price), largest first.
+final categoryValuesProvider = Provider<List<CategoryValue>>((ref) {
+  final cost = <String, double>{};
+  final retail = <String, double>{};
+  for (final p in ref.watch(productListProvider)) {
+    final key = p.category ?? 'Uncategorised';
+    cost.update(key, (v) => v + p.stockValueAtCost, ifAbsent: () => p.stockValueAtCost);
+    retail.update(key, (v) => v + p.stockValueAtRetail, ifAbsent: () => p.stockValueAtRetail);
+  }
   return [
-    for (final warehouse in warehouses)
-      WarehouseValueSlice(
-        warehouseName: warehouse.name,
-        value: stock
-            .where((row) => row.warehouseId == warehouse.id)
-            .fold(0.0, (sum, row) {
-              final product = products[row.productId];
-              if (product == null) return sum;
-              return sum + row.quantity * product.purchasePrice;
-            }),
-      ),
-  ];
+    for (final key in cost.keys)
+      if (cost[key]! > 0 || retail[key]! > 0)
+        CategoryValue(category: key, atCost: cost[key]!, atRetail: retail[key]!),
+  ]..sort((a, b) => b.atCost.compareTo(a.atCost));
 });
 
 class DailyMovementVolume {
   const DailyMovementVolume({required this.date, required this.stockIn, required this.stockOut});
+
   final DateTime date;
   final int stockIn;
   final int stockOut;
 }
 
-/// Stock-in vs stock-out quantity for each of the last 7 days, org-wide.
-final movementVolumeLast7DaysProvider = Provider<List<DailyMovementVolume>>((ref) {
-  final movements = ref.watch(inventoryProvider);
+/// Units added and removed for each of the last 14 days.
+final movementVolumeProvider = Provider<List<DailyMovementVolume>>((ref) {
+  final movements = ref.watch(movementListProvider);
   final today = DateTime.now();
 
-  return List.generate(7, (i) {
-    final day = DateTime(today.year, today.month, today.day).subtract(Duration(days: 6 - i));
+  return List.generate(14, (i) {
+    final day = DateTime(today.year, today.month, today.day).subtract(Duration(days: 13 - i));
     final sameDay = movements.where((m) =>
-        m.date.year == day.year && m.date.month == day.month && m.date.day == day.day);
+        m.createdAt.year == day.year && m.createdAt.month == day.month && m.createdAt.day == day.day);
     return DailyMovementVolume(
       date: day,
-      stockIn: sameDay
-          .where((m) => m.type == StockMovementType.stockIn)
-          .fold(0, (sum, m) => sum + m.quantity),
-      stockOut: sameDay
-          .where((m) => m.type == StockMovementType.stockOut)
-          .fold(0, (sum, m) => sum + m.quantity),
+      stockIn: sameDay.where((m) => m.quantity > 0).fold(0, (sum, m) => sum + m.quantity),
+      stockOut: sameDay.where((m) => m.quantity < 0).fold(0, (sum, m) => sum - m.quantity),
     );
   });
 });
 
-class WarehouseCount {
-  const WarehouseCount({required this.warehouseName, required this.count});
-  final String warehouseName;
-  final int count;
+class StockHealth {
+  const StockHealth({required this.healthy, required this.low, required this.out});
+
+  final int healthy;
+  final int low;
+  final int out;
+
+  int get total => healthy + low + out;
 }
 
-/// Count of low-stock (product, warehouse) pairs per warehouse.
-final lowStockByWarehouseProvider = Provider<List<WarehouseCount>>((ref) {
-  final warehouses = ref.watch(warehousesProvider);
-  final stock = ref.watch(warehouseStockProvider);
-
-  return [
-    for (final warehouse in warehouses)
-      WarehouseCount(
-        warehouseName: warehouse.name,
-        count: stock.where((row) => row.warehouseId == warehouse.id && row.isLowStock).length,
-      ),
-  ];
+final stockHealthProvider = Provider<StockHealth>((ref) {
+  final products = ref.watch(productListProvider);
+  return StockHealth(
+    healthy: products.where((p) => !p.isLowStock && !p.isOutOfStock).length,
+    low: products.where((p) => p.isLowStock).length,
+    out: products.where((p) => p.isOutOfStock).length,
+  );
 });
 
-/// Total purchase spend per warehouse (all-time, across the seeded
-/// purchase orders).
-final purchaseSpendByWarehouseProvider = Provider<List<WarehouseValueSlice>>((ref) {
-  final warehouses = ref.watch(warehousesProvider);
-  final purchases = ref.watch(purchasesProvider);
-
-  return [
-    for (final warehouse in warehouses)
-      WarehouseValueSlice(
-        warehouseName: warehouse.name,
-        value: purchases
-            .where((p) => p.warehouseId == warehouse.id)
-            .fold(0.0, (sum, p) => sum + p.totalCost),
-      ),
-  ];
+/// The products holding the most money, at purchase cost.
+final topProductsByValueProvider = Provider<List<Product>>((ref) {
+  final products = [...ref.watch(productListProvider).where((p) => p.stockValueAtCost > 0)]
+    ..sort((a, b) => b.stockValueAtCost.compareTo(a.stockValueAtCost));
+  return products.take(6).toList();
 });

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../warehouses/data/warehouses_repository.dart';
 import '../data/suppliers_repository.dart';
 import '../domain/supplier.dart';
 
@@ -17,14 +16,6 @@ class _SupplierFormDialogState extends ConsumerState<SupplierFormDialog> {
   final _nameController = TextEditingController();
   final _contactController = TextEditingController();
   final _phoneController = TextEditingController();
-
-  String? _warehouseId;
-
-  @override
-  void initState() {
-    super.initState();
-    _warehouseId = ref.read(selectedWarehouseIdProvider);
-  }
 
   @override
   void dispose() {
@@ -44,7 +35,6 @@ class _SupplierFormDialogState extends ConsumerState<SupplierFormDialog> {
             phone: _phoneController.text.trim(),
             productsSupplied: const [],
             balanceOwed: 0,
-            warehouseId: _warehouseId!,
           ),
         );
     Navigator.of(context).pop();
@@ -52,8 +42,6 @@ class _SupplierFormDialogState extends ConsumerState<SupplierFormDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final warehouses = ref.watch(warehousesProvider);
-
     return AlertDialog(
       title: const Text('Add supplier'),
       content: SizedBox(
@@ -63,17 +51,6 @@ class _SupplierFormDialogState extends ConsumerState<SupplierFormDialog> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              DropdownButtonFormField<String>(
-                initialValue: _warehouseId,
-                decoration: const InputDecoration(labelText: 'Warehouse'),
-                items: [
-                  for (final warehouse in warehouses)
-                    DropdownMenuItem(value: warehouse.id, child: Text(warehouse.name)),
-                ],
-                onChanged: (value) => setState(() => _warehouseId = value),
-                validator: (value) => value == null ? 'Select a warehouse' : null,
-              ),
-              const SizedBox(height: 12),
               TextFormField(
                 controller: _nameController,
                 decoration: const InputDecoration(labelText: 'Business name'),

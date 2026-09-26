@@ -2,23 +2,21 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/utils/formatters.dart';
-import '../../../shared/widgets/mock_data_badge.dart';
+import '../../../shared/widgets/local_only_badge.dart';
 import '../../../shared/widgets/section_header.dart';
 import '../../../shared/widgets/status_pill.dart';
-import '../../../shared/widgets/warehouse/warehouse_selector.dart';
-import '../../warehouses/data/warehouses_repository.dart';
 import '../data/purchases_repository.dart';
 import '../domain/purchase.dart';
 import 'purchase_form_dialog.dart';
 
-/// UI-only for now: reads from the MOCK [scopedPurchasesProvider].
+/// LOCAL ONLY: purchases have no backend yet (see `docs/desktop-api.md`),
+/// so this screen works on this computer for the current session.
 class PurchasesScreen extends ConsumerWidget {
   const PurchasesScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final purchases = ref.watch(scopedPurchasesProvider);
-    final isAllWarehouses = ref.watch(selectedWarehouseIdProvider) == null;
+    final purchases = ref.watch(purchasesProvider);
 
     return Scaffold(
       body: Padding(
@@ -29,10 +27,8 @@ class PurchasesScreen extends ConsumerWidget {
             SectionHeader(
               title: 'Purchases',
               subtitle: '${purchases.length} purchase orders',
-              badge: const MockDataBadge(),
+              badge: const LocalOnlyBadge(),
               actions: [
-                const WarehouseSelector(),
-                const SizedBox(width: 8),
                 ElevatedButton.icon(
                   onPressed: () => showDialog(
                     context: context,
@@ -44,7 +40,16 @@ class PurchasesScreen extends ConsumerWidget {
               ],
             ),
             const SizedBox(height: 20),
-            Expanded(
+            if (purchases.isEmpty)
+              const Expanded(
+                child: Card(
+                  child: Center(
+                    child: Text('No purchases recorded yet. Use "Record purchase" to add one.'),
+                  ),
+                ),
+              )
+            else
+              Expanded(
               child: Card(
                 clipBehavior: Clip.antiAlias,
                 child: SingleChildScrollView(
@@ -54,7 +59,6 @@ class PurchasesScreen extends ConsumerWidget {
                       columns: [
                         const DataColumn(label: Text('PO #')),
                         const DataColumn(label: Text('Supplier')),
-                        if (isAllWarehouses) const DataColumn(label: Text('Warehouse')),
                         const DataColumn(label: Text('Date')),
                         const DataColumn(label: Text('Items')),
                         const DataColumn(label: Text('Total'), numeric: true),
@@ -66,7 +70,6 @@ class PurchasesScreen extends ConsumerWidget {
                             cells: [
                               DataCell(Text(purchase.id)),
                               DataCell(Text(purchase.supplierName)),
-                              if (isAllWarehouses) DataCell(Text(purchase.warehouseName)),
                               DataCell(Text(dateFormat.format(purchase.date))),
                               DataCell(Text('${purchase.items.length} line item(s)')),
                               DataCell(Text(currencyFormat.format(purchase.totalCost))),

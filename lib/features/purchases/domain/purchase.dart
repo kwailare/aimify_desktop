@@ -22,13 +22,12 @@ class PurchaseLineItem {
   double get lineTotal => quantity * unitCost;
 }
 
-/// Placeholder domain model — no `/api/v1/purchases` endpoint yet.
+/// LOCAL ONLY — there is no `/api/v1/purchases` endpoint yet, so purchases
+/// live on this computer for the current session and are not synced.
 class Purchase {
   const Purchase({
     required this.id,
     required this.supplierName,
-    required this.warehouseId,
-    required this.warehouseName,
     required this.date,
     required this.items,
     required this.paymentStatus,
@@ -37,8 +36,6 @@ class Purchase {
 
   final String id;
   final String supplierName;
-  final String warehouseId;
-  final String warehouseName;
   final DateTime date;
   final List<PurchaseLineItem> items;
   final PaymentStatus paymentStatus;

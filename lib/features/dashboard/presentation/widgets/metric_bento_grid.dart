@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/utils/formatters.dart';
+import '../../../auth/presentation/auth_controller.dart';
 import '../../data/dashboard_metrics.dart';
 import 'animated_counter_text.dart';
 
@@ -16,12 +17,17 @@ class MetricBentoGrid extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
 
+    final plan = ref.watch(authControllerProvider).valueOrNull?.plan;
+    final warehouseLimit = plan?.limits.warehouses;
+
     final smallCards = [
       _SmallMetricCard(
-        label: 'Warehouses',
-        value: ref.watch(warehouseCountProvider).toDouble(),
+        label: 'Active warehouses',
+        value: ref.watch(activeWarehouseCountProvider).toDouble(),
         format: (v) => v.round().toString(),
-        caption: 'Independent stock locations',
+        caption: warehouseLimit == null
+            ? 'Unlimited on your plan'
+            : '$warehouseLimit allowed on your plan',
         icon: Icons.warehouse_outlined,
         accent: const Color(0xFF2F8F5B),
       ),
@@ -29,17 +35,17 @@ class MetricBentoGrid extends ConsumerWidget {
         label: 'Low-stock items',
         value: ref.watch(lowStockCountProvider).toDouble(),
         format: (v) => v.round().toString(),
-        caption: 'At or below alert threshold',
+        caption: 'At or below their reorder level',
         icon: Icons.warning_amber_outlined,
-        accent: theme.colorScheme.error,
+        accent: const Color(0xFFD88B00),
       ),
       _SmallMetricCard(
-        label: 'Outstanding debt',
-        value: ref.watch(outstandingDebtProvider),
-        format: currencyFormat.format,
-        caption: 'Owed by customers',
-        icon: Icons.account_balance_wallet_outlined,
-        accent: const Color(0xFF6C63FF),
+        label: 'Out of stock',
+        value: ref.watch(outOfStockCountProvider).toDouble(),
+        format: (v) => v.round().toString(),
+        caption: 'Nothing left on hand',
+        icon: Icons.remove_shopping_cart_outlined,
+        accent: theme.colorScheme.error,
       ),
     ];
 
@@ -156,12 +162,20 @@ class _FeaturedInventoryCard extends ConsumerWidget {
           ),
           const SizedBox(height: 2),
           Text(
-            'At purchase cost, current stock across every category',
+            'At purchase cost · ${currencyFormat.format(ref.watch(retailValueProvider))} at selling price',
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSurface.withValues(alpha: 0.55),
             ),
           ),
           const SizedBox(height: 20),
+          if (byCategory.isEmpty)
+            Text(
+              'No stock recorded yet — record a stock in to see your inventory value here.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.55),
+              ),
+            )
+          else
           ClipRRect(
             borderRadius: BorderRadius.circular(999),
             child: SizedBox(

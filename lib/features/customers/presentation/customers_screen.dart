@@ -2,14 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/utils/formatters.dart';
-import '../../../shared/widgets/mock_data_badge.dart';
+import '../../../shared/widgets/local_only_badge.dart';
 import '../../../shared/widgets/section_header.dart';
 import '../../../shared/widgets/status_pill.dart';
 import '../data/customers_repository.dart';
 import 'customer_form_dialog.dart';
 import 'customer_history_dialog.dart';
 
-/// UI-only for now: reads from the MOCK [customersProvider].
+/// LOCAL ONLY: customers have no backend yet (see `docs/desktop-api.md`),
+/// so this screen works on this computer for the current session.
 class CustomersScreen extends ConsumerWidget {
   const CustomersScreen({super.key});
 
@@ -26,7 +27,7 @@ class CustomersScreen extends ConsumerWidget {
             SectionHeader(
               title: 'Customers',
               subtitle: '${customers.length} customers · tap a row for transaction history',
-              badge: const MockDataBadge(),
+              badge: const LocalOnlyBadge(),
               actions: [
                 ElevatedButton.icon(
                   onPressed: () => showDialog(
@@ -39,7 +40,16 @@ class CustomersScreen extends ConsumerWidget {
               ],
             ),
             const SizedBox(height: 20),
-            Expanded(
+            if (customers.isEmpty)
+              const Expanded(
+                child: Card(
+                  child: Center(
+                    child: Text('No customers yet. Use "Add customer" to add one.'),
+                  ),
+                ),
+              )
+            else
+              Expanded(
               child: Card(
                 clipBehavior: Clip.antiAlias,
                 child: SingleChildScrollView(

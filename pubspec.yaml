@@ -56,11 +56,11 @@ dependencies:
   # Charts for the Reports screen
   fl_chart: ^0.69.2
 
-  # Reading .xlsx files for the Products bulk-import flow
-  excel: ^4.0.6
-
-  # Native "choose a file" dialog for picking the .xlsx to import
+  # Native "choose a file" dialog for picking a product picture
   file_picker: ^8.1.6
+
+  # Opens the website's billing page from the subscription-locked screen
+  url_launcher: ^6.3.1
 
 dev_dependencies:
   flutter_test:
@@ -72,6 +72,7 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  crypto: ^3.0.7
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

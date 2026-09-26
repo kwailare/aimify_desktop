@@ -9,15 +9,15 @@ import 'report_card.dart';
 const _stockInColor = Color(0xFF2F8F5B);
 const _stockOutColor = Color(0xFFD1453B);
 
-/// Stock-in vs stock-out quantity over the last 7 days, as two lines.
+/// Units added vs removed over the last 14 days, as two lines.
 class MovementTrendChart extends ConsumerWidget {
   const MovementTrendChart({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final days = ref.watch(movementVolumeLast7DaysProvider);
-    final dayLabel = DateFormat('E');
+    final days = ref.watch(movementVolumeProvider);
+    final dayLabel = DateFormat('d MMM');
 
     final maxY = days.fold(1.0, (m, d) {
       final localMax = d.stockIn > d.stockOut ? d.stockIn : d.stockOut;
@@ -25,16 +25,16 @@ class MovementTrendChart extends ConsumerWidget {
     });
 
     return ReportCard(
-      title: 'Stock movement, last 7 days',
-      subtitle: 'Units moved in vs out, across every warehouse',
+      title: 'Stock movement, last 14 days',
+      subtitle: 'Units in vs out, from the latest 100 movements',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          const Row(
             children: [
-              _LegendDot(color: _stockInColor, label: 'Stock in'),
-              const SizedBox(width: 16),
-              _LegendDot(color: _stockOutColor, label: 'Stock out'),
+              _LegendDot(color: _stockInColor, label: 'Added'),
+              SizedBox(width: 16),
+              _LegendDot(color: _stockOutColor, label: 'Removed'),
             ],
           ),
           const SizedBox(height: 12),
@@ -61,6 +61,7 @@ class MovementTrendChart extends ConsumerWidget {
                   bottomTitles: AxisTitles(
                     sideTitles: SideTitles(
                       showTitles: true,
+                      interval: 3,
                       getTitlesWidget: (value, meta) {
                         final index = value.toInt();
                         if (index < 0 || index >= days.length) return const SizedBox.shrink();
@@ -78,23 +79,27 @@ class MovementTrendChart extends ConsumerWidget {
                 lineBarsData: [
                   LineChartBarData(
                     spots: [
-                      for (var i = 0; i < days.length; i++) FlSpot(i.toDouble(), days[i].stockIn.toDouble()),
+                      for (var i = 0; i < days.length; i++)
+                        FlSpot(i.toDouble(), days[i].stockIn.toDouble()),
                     ],
                     isCurved: true,
                     color: _stockInColor,
                     barWidth: 3,
                     dotData: const FlDotData(show: true),
-                    belowBarData: BarAreaData(show: true, color: _stockInColor.withValues(alpha: 0.08)),
+                    belowBarData:
+                        BarAreaData(show: true, color: _stockInColor.withValues(alpha: 0.08)),
                   ),
                   LineChartBarData(
                     spots: [
-                      for (var i = 0; i < days.length; i++) FlSpot(i.toDouble(), days[i].stockOut.toDouble()),
+                      for (var i = 0; i < days.length; i++)
+                        FlSpot(i.toDouble(), days[i].stockOut.toDouble()),
                     ],
                     isCurved: true,
                     color: _stockOutColor,
                     barWidth: 3,
                     dotData: const FlDotData(show: true),
-                    belowBarData: BarAreaData(show: true, color: _stockOutColor.withValues(alpha: 0.08)),
+                    belowBarData:
+                        BarAreaData(show: true, color: _stockOutColor.withValues(alpha: 0.08)),
                   ),
                 ],
               ),
