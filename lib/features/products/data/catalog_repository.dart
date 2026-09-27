@@ -32,7 +32,7 @@ class CatalogRepository {
       kind == CatalogKind.category ? ApiConstants.category(id) : ApiConstants.unit(id);
 
   Future<List<CatalogOption>> list(CatalogKind kind) async {
-    final json = await _api.get(_listUrl(kind));
+    final json = await _api.get(_listUrl(kind), cacheKey: kind.name);
     final key = kind == CatalogKind.category ? 'categories' : 'units';
     return [
       for (final row in (json[key] as List<dynamic>? ?? const []))

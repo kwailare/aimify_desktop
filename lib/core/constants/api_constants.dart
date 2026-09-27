@@ -8,12 +8,14 @@
 class ApiConstants {
   ApiConstants._();
 
-  /// aimify-web running locally via `next dev`.
+  /// The aimify-web server this build talks to. Defaults to a local
+  /// `next dev`; a release build points at production by defining it:
   ///
-  /// TODO: swap for the production Vercel domain once aimify-web is
-  /// deployed, ideally via a build-time flavor/environment flag rather than
-  /// editing this constant by hand.
-  static const String baseUrl = 'http://localhost:3000';
+  ///   flutter build windows --dart-define=AIMIFY_API_URL=https://www.aimify.app
+  static const String baseUrl = String.fromEnvironment(
+    'AIMIFY_API_URL',
+    defaultValue: 'http://localhost:3000',
+  );
 
   static const String _v1 = '$baseUrl/api/v1';
 

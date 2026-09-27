@@ -5,6 +5,7 @@ import 'package:aimify_desktop/features/products/data/products_repository.dart';
 import 'package:aimify_desktop/features/products/domain/product.dart';
 import 'package:aimify_desktop/features/warehouses/data/warehouses_repository.dart';
 import 'package:aimify_desktop/features/warehouses/domain/warehouse.dart';
+import 'package:aimify_desktop/shared/offline/local_store.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// In-memory stand-ins for the network repositories, so widget tests run the
@@ -44,12 +45,20 @@ class FakeProductsRepository implements ProductsRepository {
 
   List<Product> products;
 
+  /// Every product created through this fake, in order (for asserting what
+  /// the sync engine sent).
+  final List<ProductInput> created = [];
+
   @override
   Future<List<Product>> list() async => List.of(products);
 
   @override
+  Future<List<Product>> listFresh() async => List.of(products);
+
+  @override
   Future<Product> create(ProductInput input) async {
-    final created = fixtureProduct('new${products.length}', name: input.name, stock: 0);
+    this.created.add(input);
+    final created = fixtureProduct('srv${this.created.length}', name: input.name, stock: 0);
     products = [...products, created];
     return created;
   }
@@ -103,12 +112,25 @@ class FakeInventoryRepository implements InventoryRepository {
   List<StockMovement> movementRows;
   StockAlerts alertRows;
 
+  /// Thrown by [record] when set — a network failure or a server refusal.
+  Object? recordError;
+
+  /// When true, a failing [record] first applies the movement (as if the
+  /// server processed it but the answer never arrived).
+  bool applyBeforeFailing = false;
+
+  /// Every movement sent through [record].
+  final List<({String productId, int quantity})> sent = [];
+
   /// The last call to [record], so tests can assert the exact signed delta
   /// that would have been sent to the server.
   ({String productId, StockMovementType type, int quantity})? lastRecorded;
 
   @override
   Future<List<StockMovement>> movements() async => List.of(movementRows);
+
+  @override
+  Future<List<StockMovement>> movementsFresh() async => List.of(movementRows);
 
   @override
   Future<StockAlerts> alerts() async => alertRows;
@@ -122,6 +144,27 @@ class FakeInventoryRepository implements InventoryRepository {
     String? reason,
   }) async {
     lastRecorded = (productId: productId, type: type, quantity: quantity);
+    sent.add((productId: productId, quantity: quantity));
+    final error = recordError;
+    if (error != null) {
+      if (applyBeforeFailing) {
+        movementRows = [
+          StockMovement(
+            id: 'landed-${sent.length}',
+            productId: productId,
+            warehouseId: warehouseId,
+            userId: 'u1',
+            type: type,
+            quantity: quantity,
+            previousStock: 0,
+            newStock: quantity,
+            createdAt: DateTime.now(),
+          ),
+          ...movementRows,
+        ];
+      }
+      throw error;
+    }
     return MovementResult(
       movement: StockMovement(
         id: 'm-new',
@@ -156,8 +199,10 @@ List<Override> fakeDataOverrides({
   FakeProductsRepository? products,
   FakeWarehousesRepository? warehouses,
   FakeInventoryRepository? inventory,
+  LocalStore? store,
 }) =>
     [
+      localStoreProvider.overrideWithValue(store ?? MemoryLocalStore()),
       productsRepositoryProvider.overrideWithValue(
         products ?? FakeProductsRepository([fixtureProduct('1'), fixtureProduct('2', stock: 2)]),
       ),

@@ -116,17 +116,41 @@ class _ProductFormDialogState extends ConsumerState<ProductFormDialog> {
 
     final notifier = ref.read(productsProvider.notifier);
     try {
-      final saved = _editing
+      final outcome = _editing
           ? await notifier.edit(widget.product!.id, input)
           : await notifier.add(input);
+      final productId = _editing ? widget.product!.id : outcome.value?.id;
+
+      // Saved on this computer to sync later: pictures need a connection, so
+      // say so instead of silently dropping the one that was chosen.
+      if (outcome.queued) {
+        ref.invalidate(catalogProvider);
+        if (!mounted) return;
+        final hadPicture = _pickedImage != null;
+        final messenger = ScaffoldMessenger.of(context);
+        Navigator.of(context).pop(true);
+        messenger
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(
+              content: Text(
+                hadPicture
+                    ? 'Saved on this computer — it will sync when the connection is good. The '
+                        'picture needs a connection: add it once you are back online.'
+                    : 'Saved on this computer — it will sync when the connection is good.',
+              ),
+            ),
+          );
+        return;
+      }
 
       // The product itself is saved at this point. If only the picture
       // fails, keep the dialog open and say so — closing would hide it.
       try {
         if (_pickedImage != null) {
-          await notifier.setImage(saved.id, bytes: _pickedImage!, filename: _pickedImageName ?? 'image');
+          await notifier.setImage(productId!, bytes: _pickedImage!, filename: _pickedImageName ?? 'image');
         } else if (_removeImage && widget.product?.imageUrl != null) {
-          await notifier.clearImage(saved.id);
+          await notifier.clearImage(productId!);
         }
       } catch (e) {
         if (mounted) {

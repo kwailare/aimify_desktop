@@ -408,7 +408,18 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
                   return i.isOdd ? theme.colorScheme.onSurface.withValues(alpha: 0.025) : null;
                 }),
                 cells: [
-                  DataCell(Text(dateFormat.format(rows[i].createdAt))),
+                  DataCell(
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(dateFormat.format(rows[i].createdAt)),
+                        if (rows[i].isPending) ...[
+                          const SizedBox(width: 8),
+                          const StatusPill(label: 'Pending sync', tone: StatusTone.neutral),
+                        ],
+                      ],
+                    ),
+                  ),
                   DataCell(
                     ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: 220),

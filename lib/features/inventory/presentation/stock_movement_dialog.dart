@@ -99,7 +99,7 @@ class _StockMovementDialogState extends ConsumerState<StockMovementDialog> {
     });
 
     try {
-      final result = await ref.read(movementsProvider.notifier).record(
+      final outcome = await ref.read(movementsProvider.notifier).record(
             productId: product.id,
             warehouseId: warehouseId,
             type: type,
@@ -109,11 +109,15 @@ class _StockMovementDialogState extends ConsumerState<StockMovementDialog> {
       if (!mounted) return;
       final messenger = ScaffoldMessenger.of(context);
       Navigator.of(context).pop(true);
-      final note = switch (result.alert) {
-        'out_of_stock' => '${product.name} is now out of stock.',
-        'low_stock' => '${product.name} is running low (${result.currentStock} left).',
-        _ => '${type.label} recorded — ${product.name} now has ${result.currentStock}.',
-      };
+      final result = outcome.value;
+      final note = outcome.queued
+          ? '${type.label} saved on this computer — ${product.name} now shows '
+              '${product.currentStock + delta}. It will sync when the connection is good.'
+          : switch (result!.alert) {
+              'out_of_stock' => '${product.name} is now out of stock.',
+              'low_stock' => '${product.name} is running low (${result.currentStock} left).',
+              _ => '${type.label} recorded — ${product.name} now has ${result.currentStock}.',
+            };
       messenger
         ..hideCurrentSnackBar()
         ..showSnackBar(SnackBar(content: Text(note)));

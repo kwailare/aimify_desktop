@@ -5,10 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/auth/presentation/auth_controller.dart';
-import '../../features/inventory/data/inventory_repository.dart';
-import '../../features/products/data/products_repository.dart';
-import '../../features/warehouses/data/warehouses_repository.dart';
-import '../services/authed_api.dart';
+import '../../features/sync/sync_banner.dart';
+import '../../features/sync/sync_engine.dart';
 import 'sidebar/app_sidebar.dart';
 import 'sidebar/sidebar_controller.dart';
 
@@ -41,6 +39,7 @@ class AppShell extends ConsumerStatefulWidget {
 
 class _AppShellState extends ConsumerState<AppShell> {
   Timer? _refreshTimer;
+  late final SyncEngine _sync;
 
   @override
   void initState() {
@@ -49,24 +48,16 @@ class _AppShellState extends ConsumerState<AppShell> {
       _meRefreshInterval,
       (_) => ref.read(authControllerProvider.notifier).refresh(),
     );
+    // Sync starts with the signed-in shell: it watches the connection and
+    // sends whatever was saved offline once the connection is good.
+    _sync = ref.read(syncEngineProvider.notifier)..start();
   }
 
   @override
   void dispose() {
     _refreshTimer?.cancel();
+    _sync.stop();
     super.dispose();
-  }
-
-  /// Re-reads everything the screens show. The first request that gets an
-  /// answer clears the offline banner (see `AuthedApi`).
-  Future<void> _retryAll() async {
-    await Future.wait([
-      ref.read(authControllerProvider.notifier).refresh(),
-      ref.read(productsProvider.notifier).refresh(),
-      ref.read(warehousesProvider.notifier).refresh(),
-      ref.read(movementsProvider.notifier).refresh(),
-      ref.read(stockAlertsProvider.notifier).refresh(),
-    ]);
   }
 
   @override
@@ -75,11 +66,9 @@ class _AppShellState extends ConsumerState<AppShell> {
     final sidebarOpen = ref.watch(sidebarOpenProvider);
     void setOpen(bool value) => ref.read(sidebarOpenProvider.notifier).state = value;
 
-    final offline = ref.watch(offlineProvider);
-
     final content = Column(
       children: [
-        if (offline) _OfflineBanner(onRetry: _retryAll),
+        const SyncBanner(),
         Expanded(
           child: _BranchFadeIn(
             branchIndex: navigationShell.currentIndex,
@@ -170,38 +159,6 @@ class _AppShellState extends ConsumerState<AppShell> {
             ],
           );
         },
-      ),
-    );
-  }
-}
-
-/// Shown across the top of every screen while the last request found no
-/// connection — the data on screen is still what was loaded before, so it
-/// says so and offers a retry instead of failing silently.
-class _OfflineBanner extends StatelessWidget {
-  const _OfflineBanner({required this.onRetry});
-
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Material(
-      color: scheme.error.withValues(alpha: 0.12),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-        child: Row(
-          children: [
-            Icon(Icons.wifi_off_rounded, size: 18, color: scheme.error),
-            const SizedBox(width: 10),
-            const Expanded(
-              child: Text(
-                "You're offline. What you see may be out of date, and changes can't be saved.",
-              ),
-            ),
-            TextButton(onPressed: onRetry, child: const Text('Retry')),
-          ],
-        ),
       ),
     );
   }

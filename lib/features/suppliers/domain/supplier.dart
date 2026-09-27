@@ -1,5 +1,5 @@
 /// LOCAL ONLY — there is no `/api/v1/suppliers` endpoint yet, so suppliers
-/// live on this computer for the current session and are not synced.
+/// are saved on this computer only (see `persisted_list.dart`).
 class Supplier {
   const Supplier({
     required this.id,
@@ -26,5 +26,23 @@ class Supplier {
         phone: phone,
         productsSupplied: productsSupplied,
         balanceOwed: balanceOwed ?? this.balanceOwed,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'contactPerson': contactPerson,
+        'phone': phone,
+        'productsSupplied': productsSupplied,
+        'balanceOwed': balanceOwed,
+      };
+
+  factory Supplier.fromJson(Map<String, dynamic> json) => Supplier(
+        id: json['id'] as String,
+        name: json['name'] as String,
+        contactPerson: json['contactPerson'] as String,
+        phone: json['phone'] as String,
+        productsSupplied: List<String>.from(json['productsSupplied'] as List),
+        balanceOwed: (json['balanceOwed'] as num).toDouble(),
       );
 }

@@ -15,7 +15,7 @@ class WarehousesRepository {
   final AuthedApi _api;
 
   Future<List<Warehouse>> list() async {
-    final json = await _api.get(ApiConstants.warehouses);
+    final json = await _api.get(ApiConstants.warehouses, cacheKey: 'warehouses');
     return [
       for (final row in (json['warehouses'] as List<dynamic>? ?? const []))
         Warehouse.fromJson(row as Map<String, dynamic>),

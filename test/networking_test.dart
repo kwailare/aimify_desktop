@@ -7,6 +7,8 @@ import 'dart:io';
 
 import 'package:aimify_desktop/features/auth/domain/auth_models.dart';
 import 'package:aimify_desktop/features/auth/presentation/auth_controller.dart';
+import 'package:aimify_desktop/shared/offline/connection.dart';
+import 'package:aimify_desktop/shared/offline/local_store.dart';
 import 'package:aimify_desktop/shared/services/api_client.dart';
 import 'package:aimify_desktop/shared/services/api_exception.dart';
 import 'package:aimify_desktop/shared/services/authed_api.dart';
@@ -48,6 +50,7 @@ ProviderContainer _container(http.Client client, {String? token = 'tok'}) {
   final container = ProviderContainer(
     overrides: [
       secureTokenStorageProvider.overrideWithValue(storage),
+      localStoreProvider.overrideWithValue(MemoryLocalStore()),
       apiClientProvider.overrideWithValue(ApiClient(client)),
       authControllerProvider.overrideWith(_RecordingAuth.new),
     ],
@@ -188,7 +191,7 @@ void main() {
       expect(auth.refreshes, 1);
     });
 
-    test('offline flips the banner on, and the next success clears it', () async {
+    test('offline flips the connection state, and the next success restores it', () async {
       var online = false;
       final container = _container(MockClient((_) async {
         if (!online) throw const SocketException('offline');
@@ -198,11 +201,11 @@ void main() {
       final api = container.read(authedApiProvider);
 
       await expectLater(api.get('http://x/products'), throwsA(isA<NetworkException>()));
-      expect(container.read(offlineProvider), isTrue);
+      expect(container.read(connectionProvider), ConnectionQuality.offline);
 
       online = true;
       await api.get('http://x/products');
-      expect(container.read(offlineProvider), isFalse);
+      expect(container.read(connectionProvider), ConnectionQuality.good);
     });
   });
 

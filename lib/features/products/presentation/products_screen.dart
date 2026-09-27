@@ -62,7 +62,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
     final canWrite = hasPermission(ref, Permissions.productsWrite);
     final canArchive = hasPermission(ref, Permissions.productsArchive);
     final plan = ref.watch(authControllerProvider).valueOrNull?.plan;
-    final atProductCap = plan?.productsAtCap ?? false;
+    final atProductCap = ref.watch(productSlotsFullProvider);
 
     var subtitle = '${all.length} active product(s)';
     if (plan?.limits.products != null) {
@@ -323,7 +323,9 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
           ),
         ),
         DataCell(
-          product.isOutOfStock
+          product.isPending
+              ? const StatusPill(label: 'Pending sync', tone: StatusTone.neutral)
+              : product.isOutOfStock
               ? const StatusPill(label: 'Out of stock', tone: StatusTone.negative)
               : product.isLowStock
                   ? const StatusPill(label: 'Low stock', tone: StatusTone.warning)
@@ -373,7 +375,18 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
             onPressed: () async {
               Navigator.of(dialogContext).pop();
               try {
-                await ref.read(productsProvider.notifier).archive(product.id);
+                final outcome = await ref.read(productsProvider.notifier).archive(product.id);
+                if (outcome.queued && context.mounted) {
+                  ScaffoldMessenger.of(context)
+                    ..hideCurrentSnackBar()
+                    ..showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'Saved on this computer — it will sync when the connection is good.',
+                        ),
+                      ),
+                    );
+                }
               } catch (e) {
                 if (context.mounted) showErrorSnack(context, e);
               }

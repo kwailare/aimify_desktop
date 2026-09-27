@@ -1,14 +1,22 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../shared/offline/persisted_list.dart';
 import '../domain/expense.dart';
 
-/// LOCAL ONLY — in-memory for the current session. No `/api/v1/expenses`
-/// endpoint exists yet, so nothing here is saved or synced.
-class ExpensesNotifier extends Notifier<List<Expense>> {
+/// LOCAL ONLY — saved on this computer (per signed-in user) and restored on
+/// the next launch. No `/api/v1/expenses` endpoint exists yet, so nothing
+/// here is synced.
+class ExpensesNotifier extends PersistedListNotifier<Expense> {
   @override
-  List<Expense> build() => const [];
+  String get name => 'expenses';
 
-  void addExpense(Expense expense) => state = [expense, ...state];
+  @override
+  Map<String, dynamic> encode(Expense item) => item.toJson();
+
+  @override
+  Expense decode(Map<String, dynamic> json) => Expense.fromJson(json);
+
+  void addExpense(Expense expense) => setAndSave([expense, ...state]);
 }
 
 final expensesProvider = NotifierProvider<ExpensesNotifier, List<Expense>>(
