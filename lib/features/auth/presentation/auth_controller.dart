@@ -34,7 +34,13 @@ class AuthController extends AsyncNotifier<MeResponse?> {
   void _applyLocaleFormats(MeResponse? me) {
     final org = me?.organization;
     if (org == null) return;
-    updateLocaleFormatsFromOrg(currency: org.currency, dateFormatPattern: org.dateFormat);
+    updateLocaleFormatsFromOrg(
+      currency: org.currency,
+      dateFormatPattern: org.dateFormat,
+      timezone: org.timezone,
+      taxRate: org.taxRate,
+      taxName: org.taxName,
+    );
   }
 
   /// Throws [ApiException] on failure so the login screen can show the

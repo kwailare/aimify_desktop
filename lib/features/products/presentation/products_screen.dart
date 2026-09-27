@@ -314,7 +314,23 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
         ),
         DataCell(Text(product.unit)),
         DataCell(Text(currencyFormat.format(product.purchasePrice))),
-        DataCell(Text(currencyFormat.format(product.sellingPrice))),
+        DataCell(
+          hasTax
+              ? Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(currencyFormat.format(product.sellingPrice)),
+                    Text(
+                      '${currencyFormat.format(priceWithTax(product.sellingPrice))} incl. $orgTaxName',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurface.withValues(alpha: 0.55),
+                      ),
+                    ),
+                  ],
+                )
+              : Text(currencyFormat.format(product.sellingPrice)),
+        ),
         DataCell(
           StockLevelBar(
             quantity: product.currentStock,

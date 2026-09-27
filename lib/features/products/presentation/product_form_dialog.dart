@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../shared/utils/formatters.dart';
 import '../../../shared/utils/friendly_error.dart';
 import '../data/catalog_repository.dart';
 import '../data/products_repository.dart';
@@ -181,6 +182,15 @@ class _ProductFormDialogState extends ConsumerState<ProductFormDialog> {
     return null;
   }
 
+  /// What the selling price comes to with the organization's tax, shown as
+  /// the person types. Prices are stored without tax.
+  String? _withTaxHint() {
+    if (!hasTax) return null;
+    final price = double.tryParse(_sellingPrice.text.trim());
+    if (price == null || price < 0) return 'Price excludes $taxLabel';
+    return '${currencyFormat.format(priceWithTax(price))} with $taxLabel';
+  }
+
   String? _price(String? v) {
     final parsed = double.tryParse((v ?? '').trim());
     if (parsed == null || parsed < 0) return 'Enter 0 or more';
@@ -306,7 +316,11 @@ class _ProductFormDialogState extends ConsumerState<ProductFormDialog> {
                       child: TextFormField(
                         controller: _sellingPrice,
                         keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                        decoration: const InputDecoration(labelText: 'Selling price *'),
+                        onChanged: (_) => setState(() {}),
+                        decoration: InputDecoration(
+                          labelText: 'Selling price *',
+                          helperText: _withTaxHint(),
+                        ),
                         validator: _price,
                       ),
                     ),

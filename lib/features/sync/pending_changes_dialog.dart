@@ -116,7 +116,7 @@ class _OpTile extends ConsumerWidget {
               children: [
                 Text(description, style: const TextStyle(fontWeight: FontWeight.w600)),
                 Text(
-                  'Recorded ${dateFormat.format(op.createdAt)}',
+                  'Recorded ${dateTimeFormat.format(op.createdAt)}',
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.onSurface.withValues(alpha: 0.55),
                   ),

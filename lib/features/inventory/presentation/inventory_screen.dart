@@ -412,7 +412,7 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(dateFormat.format(rows[i].createdAt)),
+                        Text(dateTimeFormat.format(rows[i].createdAt)),
                         if (rows[i].isPending) ...[
                           const SizedBox(width: 8),
                           const StatusPill(label: 'Pending sync', tone: StatusTone.neutral),

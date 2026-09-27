@@ -20,6 +20,7 @@ import 'package:aimify_desktop/features/purchases/presentation/purchases_screen.
 import 'package:aimify_desktop/features/reports/presentation/reports_screen.dart';
 import 'package:aimify_desktop/features/suppliers/presentation/suppliers_screen.dart';
 import 'package:aimify_desktop/features/warehouses/presentation/warehouses_screen.dart';
+import 'package:aimify_desktop/shared/utils/formatters.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -56,6 +57,11 @@ class _OwnerAuthController extends AuthController {
 }
 
 void main() {
+  // Tax on: the products table then shows a second "incl. VAT" line under
+  // every selling price, so the taller rows are covered by the sweep below.
+  setUpAll(() => updateLocaleFormatsFromOrg(taxRate: 7.5, taxName: 'VAT'));
+  tearDownAll(() => updateLocaleFormatsFromOrg(taxRate: 0));
+
   final screens = <String, Widget>{
     'Warehouses': const WarehousesScreen(),
     'Reports': const ReportsScreen(),
