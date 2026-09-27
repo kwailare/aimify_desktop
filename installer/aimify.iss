@@ -15,9 +15,10 @@ AppId={{6F1D2A0C-4C57-4B0E-9B5A-A1F1D0A11F01}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher={#AppPublisher}
-; Per-user install: no administrator rights needed.
-PrivilegesRequired=lowest
-DefaultDirName={localappdata}\Programs\{#AppName}
+; Installs to C:\Program Files\Aimify (the 64-bit Program Files folder),
+; which needs administrator rights - Windows asks for them once.
+PrivilegesRequired=admin
+DefaultDirName={autopf}\{#AppName}
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
 OutputDir=..\dist
@@ -25,6 +26,10 @@ OutputBaseFilename=Aimify-Setup-{#AppVersion}
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
+; Brand: the Aimify mark on the installer, the setup .exe and the uninstaller.
+SetupIconFile=..\windows\runner\resources\app_icon.ico
+WizardImageFile=assets\wizard-side-1x.bmp,assets\wizard-side-2x.bmp
+WizardSmallImageFile=assets\wizard-small-1x.bmp,assets\wizard-small-2x.bmp
 UninstallDisplayIcon={app}\{#AppExe}
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
