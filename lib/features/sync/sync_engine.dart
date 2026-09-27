@@ -12,6 +12,8 @@ import '../auth/presentation/auth_controller.dart';
 import '../inventory/data/inventory_repository.dart';
 import '../inventory/domain/stock_movement.dart';
 import '../products/data/products_repository.dart';
+import '../parties/data/parties_repository.dart';
+import '../parties/domain/party.dart';
 import '../products/domain/product.dart';
 
 /// The outcome of [SyncEngine.submit]: either the server took the change
@@ -182,8 +184,12 @@ class SyncEngine extends Notifier<SyncState> {
           ref.read(productsProvider.notifier).refresh(),
           ref.read(movementsProvider.notifier).refresh(),
           ref.read(stockAlertsProvider.notifier).refresh(),
+          ref.read(partiesProvider(PartyType.customer).notifier).refresh(),
+          ref.read(partiesProvider(PartyType.supplier).notifier).refresh(),
           ref.read(authControllerProvider.notifier).refresh(),
         ]);
+        // Ledgers re-read themselves next time they are shown.
+        ref.invalidate(creditEntriesProvider);
       }
     } finally {
       state = SyncState(
@@ -197,13 +203,14 @@ class SyncEngine extends Notifier<SyncState> {
     if (!id.startsWith('local:')) return id;
     return idMap[id] ??
         (throw const _Unresolvable(
-          'The product this change belongs to could not be created, so it was not sent.',
+          'The record this change belongs to could not be created, so it was not sent.',
         ));
   }
 
   Future<void> _apply(OutboxOp op, bool wasAttempted, Map<String, String> idMap) async {
     final products = ref.read(productsRepositoryProvider);
     final inventory = ref.read(inventoryRepositoryProvider);
+    final parties = ref.read(partiesRepositoryProvider);
 
     switch (op.kind) {
       case OpKind.productCreate:
@@ -217,7 +224,7 @@ class SyncEngine extends Notifier<SyncState> {
               .firstOrNull;
         }
         final product = existing ?? await products.create(input);
-        idMap[op.localProductId] = product.id;
+        idMap[op.localId] = product.id;
 
       case OpKind.productUpdate:
         final id = _resolve(op.payload['id'] as String, idMap);
@@ -232,6 +239,46 @@ class SyncEngine extends Notifier<SyncState> {
           // Already gone: the archive is done.
           if (e.statusCode != 404) rethrow;
         }
+
+      case OpKind.partyCreate:
+        final type = PartyTypeX.fromApi(op.payload['type'] as String);
+        final input = PartyInput.fromJson(type, Map<String, dynamic>.from(op.payload['input'] as Map));
+        // A send that may already have landed: adopt the party the server has
+        // rather than creating a duplicate.
+        Party? existing;
+        if (wasAttempted) {
+          existing = (await parties.listFresh(type)).where((p) => p.name == input.name).firstOrNull;
+        }
+        final party = existing ?? await parties.create(input);
+        idMap[op.localId] = party.id;
+
+      case OpKind.partyUpdate:
+        final type = PartyTypeX.fromApi(op.payload['type'] as String);
+        final id = _resolve(op.payload['id'] as String, idMap);
+        final input = PartyInput.fromJson(type, Map<String, dynamic>.from(op.payload['input'] as Map));
+        await parties.update(id, input);
+
+      case OpKind.partyArchive:
+        final type = PartyTypeX.fromApi(op.payload['type'] as String);
+        final id = _resolve(op.payload['id'] as String, idMap);
+        try {
+          await parties.archive(type, id);
+        } on ApiException catch (e) {
+          if (e.statusCode != 404) rethrow;
+        }
+
+      case OpKind.creditEntry:
+        final partyId = _resolve(op.payload['partyId'] as String, idMap);
+        // The op id is the request's clientRef: the server returns the
+        // existing entry if this one already landed, so no check is needed.
+        await parties.recordEntry(
+          partyType: PartyTypeX.fromApi(op.payload['partyType'] as String),
+          partyId: partyId,
+          kind: CreditKindX.fromApi(op.payload['kind'] as String),
+          amount: (op.payload['amount'] as num).toDouble(),
+          note: op.payload['note'] as String?,
+          clientRef: op.id,
+        );
 
       case OpKind.movement:
         final productId = _resolve(op.payload['productId'] as String, idMap);

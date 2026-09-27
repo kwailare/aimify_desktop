@@ -11,7 +11,16 @@ import 'local_store.dart';
 /// Warehouses, categories/units and product pictures are not queued: they
 /// are rare admin actions, and a picture is a large file — those need a
 /// connection.
-enum OpKind { movement, productCreate, productUpdate, productArchive }
+enum OpKind {
+  movement,
+  productCreate,
+  productUpdate,
+  productArchive,
+  partyCreate,
+  partyUpdate,
+  partyArchive,
+  creditEntry,
+}
 
 /// A unique id for a queued change (time plus randomness, so two changes
 /// made in the same microsecond still differ).
@@ -29,8 +38,9 @@ class OutboxOp {
     this.error,
   });
 
-  /// Unique id. For [OpKind.productCreate] this doubles as the local id of
-  /// the product (`local:<id>`) until the server assigns a real one.
+  /// Unique id. For [OpKind.productCreate] and [OpKind.partyCreate] this
+  /// doubles as the local id of the new record (`local:<id>`) until the server
+  /// assigns a real one.
   final String id;
   final OpKind kind;
   final Map<String, dynamic> payload;
@@ -49,7 +59,8 @@ class OutboxOp {
 
   bool get failed => error != null;
 
-  String get localProductId => 'local:$id';
+  /// The id a record created by this op has until the server assigns one.
+  String get localId => 'local:$id';
 
   OutboxOp copyWith({bool? attempted, String? error, bool clearError = false}) => OutboxOp(
         id: id,

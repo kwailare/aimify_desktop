@@ -1,9 +1,9 @@
 /// Connection details for the aimify-web `/api/v1` backend.
 ///
 /// See `docs/desktop-api.md` for the full contract. Auth, `/me`, warehouses,
-/// products (with images), categories/units, stock movements and stock
-/// alerts are real. Customers, suppliers, purchases, expenses and credit
-/// tracking have no backend yet, so those screens stay local-only and are
+/// products (with images), categories/units, stock movements, stock alerts,
+/// customers, suppliers and the credit ledger are real. Purchases and
+/// expenses have no backend yet, so those two screens stay local-only and are
 /// marked as such.
 class ApiConstants {
   ApiConstants._();
@@ -34,6 +34,12 @@ class ApiConstants {
   static String category(String id) => '$_v1/categories/$id';
   static const String units = '$_v1/units';
   static String unit(String id) => '$_v1/units/$id';
+
+  static const String customers = '$_v1/customers';
+  static String customer(String id) => '$_v1/customers/$id';
+  static const String suppliers = '$_v1/suppliers';
+  static String supplier(String id) => '$_v1/suppliers/$id';
+  static const String creditEntries = '$_v1/credit-entries';
 
   static const String movements = '$_v1/inventory/movements';
   static const String stockAlerts = '$_v1/alerts/stock';

@@ -1,11 +1,14 @@
 import 'package:aimify_desktop/features/inventory/data/inventory_repository.dart';
 import 'package:aimify_desktop/features/inventory/domain/stock_movement.dart';
+import 'package:aimify_desktop/features/parties/data/parties_repository.dart';
+import 'package:aimify_desktop/features/parties/domain/party.dart';
 import 'package:aimify_desktop/features/products/data/catalog_repository.dart';
 import 'package:aimify_desktop/features/products/data/products_repository.dart';
 import 'package:aimify_desktop/features/products/domain/product.dart';
 import 'package:aimify_desktop/features/warehouses/data/warehouses_repository.dart';
 import 'package:aimify_desktop/features/warehouses/domain/warehouse.dart';
 import 'package:aimify_desktop/shared/offline/local_store.dart';
+import 'package:aimify_desktop/shared/services/api_exception.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// In-memory stand-ins for the network repositories, so widget tests run the
@@ -194,11 +197,138 @@ class FakeCatalogRepository implements CatalogRepository {
   Future<void> remove(CatalogKind kind, String id) async {}
 }
 
+Party fixtureParty(
+  String id, {
+  PartyType type = PartyType.customer,
+  String? name,
+  double balance = 0,
+  double creditLimit = 0,
+}) =>
+    Party(
+      id: id,
+      type: type,
+      name: name ?? '${type.label} $id',
+      phone: '0700',
+      creditLimit: creditLimit,
+      balanceOwed: balance,
+    );
+
+/// In-memory customers, suppliers and credit ledger. Mirrors the server's
+/// rules that matter to the app: a `clientRef` sent twice records once, and a
+/// payment above the balance is refused.
+class FakePartiesRepository implements PartiesRepository {
+  FakePartiesRepository({List<Party>? customers, List<Party>? suppliers})
+      : customers = customers ?? [],
+        suppliers = suppliers ?? [];
+
+  List<Party> customers;
+  List<Party> suppliers;
+
+  /// Every entry recorded, in order (what the sync engine sent).
+  final List<({String partyId, CreditKind kind, double amount, String? clientRef})> recorded = [];
+
+  /// Every party created.
+  final List<PartyInput> created = [];
+
+  /// Thrown by [recordEntry] / [create] when set.
+  Object? recordError;
+  Object? createError;
+
+  final Map<String, CreditEntry> _byRef = {};
+  final List<CreditEntry> ledger = [];
+
+  List<Party> _listFor(PartyType type) => type == PartyType.customer ? customers : suppliers;
+
+  void _setList(PartyType type, List<Party> next) {
+    if (type == PartyType.customer) {
+      customers = next;
+    } else {
+      suppliers = next;
+    }
+  }
+
+  @override
+  Future<List<Party>> list(PartyType type) async => List.of(_listFor(type));
+
+  @override
+  Future<List<Party>> listFresh(PartyType type) async => List.of(_listFor(type));
+
+  @override
+  Future<Party> create(PartyInput input) async {
+    final error = createError;
+    if (error != null) throw error;
+    created.add(input);
+    final party = fixtureParty('srv${created.length}', type: input.type, name: input.name);
+    _setList(input.type, [..._listFor(input.type), party]);
+    return party;
+  }
+
+  @override
+  Future<Party> update(String id, PartyInput input) async =>
+      _listFor(input.type).firstWhere((p) => p.id == id);
+
+  @override
+  Future<Party> archive(PartyType type, String id) async {
+    final archived = _listFor(type).firstWhere((p) => p.id == id);
+    _setList(type, _listFor(type).where((p) => p.id != id).toList());
+    return archived;
+  }
+
+  @override
+  Future<List<CreditEntry>> entries(PartyType type, String partyId) async =>
+      ledger.where((e) => e.partyId == partyId).toList().reversed.toList();
+
+  @override
+  Future<({CreditEntry entry, double balanceOwed})> recordEntry({
+    required PartyType partyType,
+    required String partyId,
+    required CreditKind kind,
+    required double amount,
+    String? note,
+    String? clientRef,
+  }) async {
+    recorded.add((partyId: partyId, kind: kind, amount: amount, clientRef: clientRef));
+    final error = recordError;
+    if (error != null) throw error;
+
+    final list = _listFor(partyType);
+    final index = list.indexWhere((p) => p.id == partyId);
+    if (index < 0) throw ApiException(404, 'Not found.');
+
+    // The same clientRef is recorded once.
+    if (clientRef != null && _byRef.containsKey(clientRef)) {
+      return (entry: _byRef[clientRef]!, balanceOwed: list[index].balanceOwed);
+    }
+
+    final signed = signedCreditAmount(kind, amount);
+    if (kind == CreditKind.payment && -signed > list[index].balanceOwed) {
+      throw ApiException(400, 'This payment is more than the balance owed.', code: 'overpayment');
+    }
+
+    final entry = CreditEntry(
+      id: 'e${ledger.length + 1}',
+      partyType: partyType,
+      partyId: partyId,
+      kind: kind,
+      amount: signed,
+      note: note,
+      userId: 'u1',
+      createdAt: DateTime.now(),
+    );
+    ledger.add(entry);
+    if (clientRef != null) _byRef[clientRef] = entry;
+    final updated = list[index].copyWith(balanceOwed: list[index].balanceOwed + signed);
+    _setList(partyType, [...list]..[index] = updated);
+    return (entry: entry, balanceOwed: updated.balanceOwed);
+  }
+}
+
 /// The overrides that swap every network repository for an in-memory one.
 List<Override> fakeDataOverrides({
   FakeProductsRepository? products,
   FakeWarehousesRepository? warehouses,
   FakeInventoryRepository? inventory,
+  FakePartiesRepository? parties,
   LocalStore? store,
 }) =>
     [
@@ -210,5 +340,6 @@ List<Override> fakeDataOverrides({
         warehouses ?? FakeWarehousesRepository([fixtureWarehouse('w1', name: 'Main Warehouse')]),
       ),
       inventoryRepositoryProvider.overrideWithValue(inventory ?? FakeInventoryRepository()),
+      partiesRepositoryProvider.overrideWithValue(parties ?? FakePartiesRepository()),
       catalogRepositoryProvider.overrideWithValue(FakeCatalogRepository()),
     ];

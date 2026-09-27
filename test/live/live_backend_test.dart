@@ -12,6 +12,7 @@
 //   AIMIFY_PASSWORD=...          shared by the three accounts
 //   AIMIFY_OWNER_EMAIL=...       Owner, no 2FA, org on a 1-warehouse plan
 //   AIMIFY_SALES_EMAIL=...       Sales Staff in the same org
+//   AIMIFY_ACCOUNTANT_EMAIL=...  Accountant / Finance in the same org
 //   AIMIFY_2FA_EMAIL=...         Owner with two-factor on
 //   AIMIFY_2FA_SECRET=...        that account's base32 authenticator secret
 //
@@ -22,6 +23,8 @@ import 'dart:io';
 import 'package:aimify_desktop/features/auth/presentation/auth_controller.dart';
 import 'package:aimify_desktop/features/inventory/data/inventory_repository.dart';
 import 'package:aimify_desktop/features/inventory/domain/allowed_movement_types.dart';
+import 'package:aimify_desktop/features/parties/data/parties_repository.dart';
+import 'package:aimify_desktop/features/parties/domain/party.dart';
 import 'package:aimify_desktop/features/sync/sync_engine.dart';
 import 'package:aimify_desktop/shared/offline/connection.dart';
 import 'package:aimify_desktop/shared/offline/outbox.dart';
@@ -341,7 +344,8 @@ void main() {
     final me = container.read(authControllerProvider).value!;
 
     expect(me.role, 'Sales Staff');
-    expect(me.permissions, ['stock.out']);
+    // Sales Staff record stock out and work with customers — nothing else.
+    expect(me.permissions, ['stock.out', 'customers.read', 'customers.write']);
     expect(allowedMovementTypes(me.permissions), [StockMovementType.stockOut]);
 
     // reading is open to every role
@@ -560,6 +564,190 @@ void main() {
     expect(offline.read(staleSinceProvider), isNotNull);
     expect(offline.read(connectionProvider), ConnectionQuality.offline);
   }, skip: skip, timeout: const Timeout(Duration(minutes: 2)));
+
+  test('customers, suppliers and the credit ledger: roles, ledger, offline and exactly-once', () async {
+    // ---- Owner: full cycle against the real API
+    final owner = await _signIn(_need('AIMIFY_OWNER_EMAIL'));
+    final me = owner.read(authControllerProvider).value!;
+    expect(me.permissions, containsAll(['customers.read', 'customers.write', 'suppliers.read',
+        'suppliers.write', 'credit.record']));
+
+    await owner.read(partiesProvider(PartyType.customer).future);
+    await owner.read(partiesProvider(PartyType.supplier).future);
+    await owner.read(outboxProvider.future);
+    final customers = owner.read(partiesProvider(PartyType.customer).notifier);
+    final suppliers = owner.read(partiesProvider(PartyType.supplier).notifier);
+    final credit = owner.read(creditServiceProvider);
+
+    final createdCustomer = await customers.add(const PartyInput(
+      type: PartyType.customer,
+      name: 'QA Blessing Store',
+      phone: '+234 700 000 0001',
+      creditLimit: 5000,
+    ));
+    expect(createdCustomer.queued, isFalse);
+    final customer = createdCustomer.value!;
+    expect(customer.creditLimit, 5000);
+    expect(customer.balanceOwed, 0);
+
+    final createdSupplier = await suppliers.add(const PartyInput(
+      type: PartyType.supplier,
+      name: 'QA Golden Grains',
+      contactPerson: 'Musa',
+      phone: '+234 800 000 0002',
+    ));
+    final supplier = createdSupplier.value!;
+    expect(supplier.contactPerson, 'Musa');
+
+    await customers.edit(customer.id, const PartyInput(
+      type: PartyType.customer,
+      name: 'QA Blessing Store',
+      phone: '+234 700 000 0001',
+      creditLimit: 9000,
+    ));
+    expect(owner.read(partyListProvider(PartyType.customer)).single.creditLimit, 9000);
+
+    // charge, part payment, the overpayment refusal
+    final charge = await credit.record(
+      partyType: PartyType.customer, partyId: customer.id, kind: CreditKind.charge, amount: 4000, note: 'Invoice 1',
+    );
+    expect(charge.queued, isFalse);
+    expect(charge.value!.balanceOwed, 4000);
+    final part = await credit.record(
+      partyType: PartyType.customer, partyId: customer.id, kind: CreditKind.payment, amount: 1500.5,
+    );
+    expect(part.value!.balanceOwed, 2499.5);
+    expect(owner.read(partyListProvider(PartyType.customer)).single.balanceOwed, 2499.5);
+
+    try {
+      await credit.record(
+        partyType: PartyType.customer, partyId: customer.id, kind: CreditKind.payment, amount: 99999,
+      );
+      fail('an overpayment should be refused');
+    } on ApiException catch (e) {
+      expect(e.code, 'overpayment');
+      expect(e.statusCode, 400);
+    }
+
+    // supplier side
+    final invoice = await credit.record(
+      partyType: PartyType.supplier, partyId: supplier.id, kind: CreditKind.charge, amount: 700,
+    );
+    expect(invoice.value!.balanceOwed, 700);
+
+    // the ledger records who did each entry
+    final ledger = await owner.read(partiesRepositoryProvider).entries(PartyType.customer, customer.id);
+    expect(ledger.map((e) => e.kind), [CreditKind.payment, CreditKind.charge]);
+    expect(ledger.every((e) => e.userId == me.user.id), isTrue);
+
+    // ---- retrying the same entry (an answer lost in transit) records it once
+    final repo = owner.read(partiesRepositoryProvider);
+    final first = await repo.recordEntry(
+      partyType: PartyType.supplier, partyId: supplier.id, kind: CreditKind.charge,
+      amount: 50, clientRef: 'qa-live-ref-1',
+    );
+    final again = await repo.recordEntry(
+      partyType: PartyType.supplier, partyId: supplier.id, kind: CreditKind.charge,
+      amount: 50, clientRef: 'qa-live-ref-1',
+    );
+    expect(again.entry.id, first.entry.id);
+    expect(again.balanceOwed, 750, reason: '700 + 50, counted once');
+
+    // ---- Sales Staff: customers yes, suppliers no, no credit.record
+    final sales = await _signIn(_need('AIMIFY_SALES_EMAIL'));
+    final salesMe = sales.read(authControllerProvider).value!;
+    expect(salesMe.permissions, containsAll(['customers.read', 'customers.write']));
+    expect(salesMe.permissions, isNot(contains('suppliers.read')));
+    expect(salesMe.permissions, isNot(contains('credit.record')));
+
+    final salesCustomers = await sales.read(partiesProvider(PartyType.customer).future);
+    expect(salesCustomers.single.name, 'QA Blessing Store');
+    expect(salesCustomers.single.balanceOwed, 2499.5);
+    // The app doesn't even ask for what the role can't read.
+    expect(await sales.read(partiesProvider(PartyType.supplier).future), isEmpty);
+    // ...and the server agrees when asked directly.
+    await _expectApiError(
+      () => sales.read(authedApiProvider).get('http://localhost:3000/api/v1/suppliers'),
+      (e) => e.isForbiddenRole && e.requiredPermission == 'suppliers.read',
+    );
+    await _expectApiError(
+      () => sales.read(creditServiceProvider).record(
+            partyType: PartyType.customer, partyId: customer.id, kind: CreditKind.payment, amount: 1,
+          ),
+      (e) => e.isForbiddenRole && e.requiredPermission == 'credit.record',
+    );
+    final byStaff = await sales.read(partiesProvider(PartyType.customer).notifier).add(
+          const PartyInput(type: PartyType.customer, name: 'QA Sales Staff Customer'),
+        );
+    expect(byStaff.queued, isFalse);
+
+    // ---- Accountant: reads both sides, cannot edit, can record payments
+    final accountant = await _signIn(_need('AIMIFY_ACCOUNTANT_EMAIL'));
+    final acctMe = accountant.read(authControllerProvider).value!;
+    expect(acctMe.permissions, containsAll(['customers.read', 'suppliers.read', 'credit.record']));
+    expect(acctMe.permissions, isNot(contains('customers.write')));
+    await accountant.read(partiesProvider(PartyType.customer).future);
+    await accountant.read(partiesProvider(PartyType.supplier).future);
+    expect(accountant.read(partyListProvider(PartyType.supplier)).single.balanceOwed, 750);
+    await _expectApiError(
+      () => accountant.read(partiesProvider(PartyType.customer).notifier).add(
+            const PartyInput(type: PartyType.customer, name: 'nope'),
+          ),
+      (e) => e.isForbiddenRole && e.requiredPermission == 'customers.write',
+    );
+    final acctPayment = await accountant.read(creditServiceProvider).record(
+          partyType: PartyType.supplier, partyId: supplier.id, kind: CreditKind.payment, amount: 250,
+        );
+    expect(acctPayment.value!.balanceOwed, 500);
+
+    // ---- hybrid: a customer, a credit sale and a payment recorded offline, then synced
+    await owner.read(outboxProvider.future);
+    final connection = owner.read(connectionProvider.notifier);
+    connection.set(ConnectionQuality.offline);
+
+    final offlineCustomer = await customers.add(
+      const PartyInput(type: PartyType.customer, name: 'QA Offline Traders', creditLimit: 2000),
+    );
+    expect(offlineCustomer.queued, isTrue);
+    final local = owner
+        .read(partyListProvider(PartyType.customer))
+        .firstWhere((c) => c.name == 'QA Offline Traders');
+    expect(local.isPending, isTrue);
+
+    await credit.record(partyType: PartyType.customer, partyId: local.id, kind: CreditKind.charge, amount: 800);
+    await credit.record(partyType: PartyType.customer, partyId: local.id, kind: CreditKind.payment, amount: 300);
+    // and a payment on an existing customer
+    await credit.record(partyType: PartyType.customer, partyId: customer.id, kind: CreditKind.payment, amount: 499.5);
+
+    expect(owner.read(pendingCountProvider), 4);
+    expect(owner.read(partyListProvider(PartyType.customer)).firstWhere((c) => c.id == local.id).balanceOwed, 500);
+    expect(owner.read(partyListProvider(PartyType.customer)).firstWhere((c) => c.id == customer.id).balanceOwed, 2000);
+    // the server hasn't seen any of it
+    final before = await repo.listFresh(PartyType.customer);
+    expect(before.any((c) => c.name == 'QA Offline Traders'), isFalse);
+    expect(before.firstWhere((c) => c.id == customer.id).balanceOwed, 2499.5);
+
+    connection.set(ConnectionQuality.good);
+    await owner.read(syncEngineProvider.notifier).flush();
+    expect(owner.read(pendingCountProvider), 0);
+
+    final after = await repo.listFresh(PartyType.customer);
+    final synced = after.firstWhere((c) => c.name == 'QA Offline Traders');
+    expect(synced.creditLimit, 2000);
+    expect(synced.balanceOwed, 500, reason: 'charge 800, payment 300 followed the customer to its real id');
+    expect(after.firstWhere((c) => c.id == customer.id).balanceOwed, 2000);
+
+    // syncing again sends nothing new: nothing was double counted
+    await owner.read(syncEngineProvider.notifier).flush();
+    final finalList = await repo.listFresh(PartyType.customer);
+    expect(finalList.firstWhere((c) => c.id == synced.id).balanceOwed, 500);
+
+    // ---- archive keeps the debt on record
+    await customers.archive(customer.id);
+    expect(owner.read(partyListProvider(PartyType.customer)).any((c) => c.id == customer.id), isFalse);
+    final archivedLedger = await repo.entries(PartyType.customer, customer.id);
+    expect(archivedLedger, hasLength(3), reason: 'charge, part payment and the offline payment');
+  }, skip: skip, timeout: const Timeout(Duration(minutes: 4)));
 
   test('logout revokes the token: the next call is a 401 that ends the session', () async {
     final container = await _signIn(_need('AIMIFY_SALES_EMAIL'));

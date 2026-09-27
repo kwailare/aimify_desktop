@@ -26,15 +26,10 @@ const navItems = [
   _NavItem('Products', Icons.inventory_2_outlined, Icons.inventory_2),
   _NavItem('Inventory', Icons.warehouse_outlined, Icons.warehouse),
   _NavItem('Purchases', Icons.shopping_cart_outlined, Icons.shopping_cart, localOnly: true),
-  _NavItem('Suppliers', Icons.local_shipping_outlined, Icons.local_shipping, localOnly: true),
-  _NavItem('Customers', Icons.people_outline, Icons.people, localOnly: true),
+  _NavItem('Suppliers', Icons.local_shipping_outlined, Icons.local_shipping),
+  _NavItem('Customers', Icons.people_outline, Icons.people),
   _NavItem('Expenses', Icons.receipt_long_outlined, Icons.receipt_long, localOnly: true),
-  _NavItem(
-    'Credits & Debts',
-    Icons.account_balance_wallet_outlined,
-    Icons.account_balance_wallet,
-    localOnly: true,
-  ),
+  _NavItem('Credits & Debts', Icons.account_balance_wallet_outlined, Icons.account_balance_wallet),
   _NavItem('Warehouses', Icons.store_outlined, Icons.store),
   _NavItem('Reports', Icons.bar_chart_outlined, Icons.bar_chart),
 ];

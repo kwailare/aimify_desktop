@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../shared/offline/outbox.dart';
 import '../../shared/utils/formatters.dart';
 import '../inventory/domain/stock_movement.dart';
+import '../parties/data/parties_repository.dart';
+import '../parties/domain/party.dart';
 import '../products/data/products_repository.dart';
 import 'sync_engine.dart';
 
@@ -19,7 +21,11 @@ class PendingChangesDialog extends ConsumerWidget {
     final theme = Theme.of(context);
     final ops = ref.watch(outboxOpsProvider);
     final syncing = ref.watch(syncEngineProvider).syncing;
-    final names = {for (final p in ref.watch(productListProvider)) p.id: p.name};
+    final names = {
+      for (final p in ref.watch(productListProvider)) p.id: p.name,
+      for (final t in PartyType.values)
+        for (final p in ref.watch(partyListProvider(t))) p.id: p.name,
+    };
 
     return AlertDialog(
       title: const Text('Changes waiting to sync'),
@@ -59,7 +65,7 @@ class PendingChangesDialog extends ConsumerWidget {
 /// A short, plain description of one queued change.
 String describeOp(OutboxOp op, Map<String, String> productNames) {
   String product(String? id) =>
-      (id == null ? null : productNames[id]) ?? 'a product';
+      (id == null ? null : productNames[id]) ?? 'a record';
 
   switch (op.kind) {
     case OpKind.movement:
@@ -74,6 +80,19 @@ String describeOp(OutboxOp op, Map<String, String> productNames) {
       return 'Edit product · ${input['name']}';
     case OpKind.productArchive:
       return 'Archive · ${product(op.payload['id'] as String?)}';
+    case OpKind.partyCreate:
+      final input = op.payload['input'] as Map;
+      return 'New ${PartyTypeX.fromApi(op.payload['type'] as String).label.toLowerCase()} · ${input['name']}';
+    case OpKind.partyUpdate:
+      final input = op.payload['input'] as Map;
+      return 'Edit ${PartyTypeX.fromApi(op.payload['type'] as String).label.toLowerCase()} · ${input['name']}';
+    case OpKind.partyArchive:
+      return 'Archive · ${product(op.payload['id'] as String?)}';
+    case OpKind.creditEntry:
+      final kind = CreditKindX.fromApi(op.payload['kind'] as String);
+      final amount = (op.payload['amount'] as num).toDouble();
+      return '${kind.label} ${currencyFormat.format(signedCreditAmount(kind, amount).abs())} · '
+          '${product(op.payload['partyId'] as String?)}';
   }
 }
 
@@ -149,8 +168,8 @@ class _OpTile extends ConsumerWidget {
                 (o) =>
                     o.id == op.id ||
                     (op.kind == OpKind.productCreate &&
-                        (o.payload['productId'] == op.localProductId ||
-                            o.payload['id'] == op.localProductId)),
+                        (o.payload['productId'] == op.localId ||
+                            o.payload['id'] == op.localId)),
               ),
               child: const Text('Discard'),
             ),

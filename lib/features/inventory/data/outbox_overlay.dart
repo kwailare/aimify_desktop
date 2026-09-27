@@ -35,7 +35,7 @@ OutboxView overlayOutbox(List<Product> base, List<OutboxOp> ops) {
       case OpKind.productCreate:
         products.add(
           ProductInput.fromJson(Map<String, dynamic>.from(op.payload['input'] as Map))
-              .toLocalProduct(op.localProductId),
+              .toLocalProduct(op.localId),
         );
       case OpKind.productUpdate:
         final i = indexOf(op.payload['id'] as String);
@@ -47,6 +47,11 @@ OutboxView overlayOutbox(List<Product> base, List<OutboxOp> ops) {
       case OpKind.productArchive:
         final i = indexOf(op.payload['id'] as String);
         if (i >= 0) products.removeAt(i);
+      case OpKind.partyCreate:
+      case OpKind.partyUpdate:
+      case OpKind.partyArchive:
+      case OpKind.creditEntry:
+        break;
       case OpKind.movement:
         final productId = op.payload['productId'] as String;
         final i = indexOf(productId);

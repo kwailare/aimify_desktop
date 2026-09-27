@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/utils/formatters.dart';
-import '../../suppliers/data/suppliers_repository.dart';
+import '../../parties/data/parties_repository.dart';
+import '../../parties/domain/party.dart';
 import '../data/purchases_repository.dart';
 import '../domain/purchase.dart';
 
@@ -66,7 +67,7 @@ class _PurchaseFormDialogState extends ConsumerState<PurchaseFormDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final suppliers = ref.watch(suppliersProvider);
+    final suppliers = ref.watch(partyListProvider(PartyType.supplier));
 
     return AlertDialog(
       title: const Text('Record purchase'),
@@ -80,7 +81,12 @@ class _PurchaseFormDialogState extends ConsumerState<PurchaseFormDialog> {
               children: [
                 DropdownButtonFormField<String>(
                   initialValue: _supplierName,
-                  decoration: const InputDecoration(labelText: 'Supplier'),
+                  decoration: InputDecoration(
+                    labelText: 'Supplier',
+                    helperText: suppliers.isEmpty
+                        ? 'No suppliers to choose from — add one on the Suppliers screen.'
+                        : null,
+                  ),
                   items: [
                     for (final supplier in suppliers)
                       DropdownMenuItem(value: supplier.name, child: Text(supplier.name)),

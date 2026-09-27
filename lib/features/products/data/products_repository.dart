@@ -112,7 +112,7 @@ class ProductsNotifier extends AsyncNotifier<List<Product>> {
     if (id.startsWith('local:')) {
       final create = ref
           .read(outboxOpsProvider)
-          .where((o) => o.kind == OpKind.productCreate && o.localProductId == id)
+          .where((o) => o.kind == OpKind.productCreate && o.localId == id)
           .firstOrNull;
       if (create != null) {
         await outbox.replace(
@@ -146,7 +146,7 @@ class ProductsNotifier extends AsyncNotifier<List<Product>> {
     if (id.startsWith('local:')) {
       await ref.read(outboxProvider.notifier).removeWhere(
             (o) =>
-                o.localProductId == id ||
+                o.localId == id ||
                 o.payload['id'] == id ||
                 o.payload['productId'] == id,
           );
