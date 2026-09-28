@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../features/auth/domain/screen_visibility.dart';
 import '../../features/auth/presentation/auth_controller.dart';
 import '../../features/auth/presentation/login_screen.dart';
 import '../../features/auth/presentation/splash_screen.dart';
@@ -83,6 +84,16 @@ String? _redirect(BuildContext context, GoRouterState state) {
   }
 
   if (location == '/login' || location == '/splash' || location == '/locked') return '/';
+
+  // A role that can't see this screen at all — a stale deep link, or the
+  // role itself just changed (an admin reassigned it on the website) while
+  // this person was already sitting on it. `/` (dashboard) is always visible,
+  // so it's always a safe landing spot.
+  final screen = screenForPath(location);
+  if (screen != null && !isScreenVisible(me.role, screen)) {
+    return location == '/' ? null : '/';
+  }
+
   return null;
 }
 
