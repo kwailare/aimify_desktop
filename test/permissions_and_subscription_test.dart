@@ -45,8 +45,10 @@ class _AccountantAuthController extends AuthController {
         user: AuthUser(id: 'u1', name: 'Bola Finance', email: 'bola@company.com'),
         organization: _orgBase,
         role: 'Accountant / Finance',
-        // Read-only — no permission keys at all.
-        permissions: [],
+        // Per docs/desktop-api.md: reads customers/suppliers and records
+        // credit entries, but can't create/edit/archive either — read-only
+        // wherever this role can see anything at all.
+        permissions: ['customers.read', 'suppliers.read', 'credit.record'],
       );
 }
 
@@ -108,15 +110,19 @@ Future<void> _pumpApp(WidgetTester tester, AuthController Function() controllerF
 
 void main() {
   group('Permission-driven UI', () {
-    testWidgets('Accountant/Finance (no permissions) sees "Add product" disabled', (tester) async {
+    testWidgets('Accountant/Finance sees "Add supplier" disabled (read-only where visible)',
+        (tester) async {
       await _pumpApp(tester, _AccountantAuthController.new);
 
-      await tester.tap(find.text('Products'));
+      // Products/Inventory/Warehouses are hidden from this role entirely
+      // (see screen_visibility_test.dart) — Suppliers is one of the screens
+      // it *does* see, just without `suppliers.write`.
+      await tester.tap(find.text('Suppliers'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
 
       final addButton = tester.widget<ElevatedButton>(
-        find.ancestor(of: find.text('Add product'), matching: find.byType(ElevatedButton)),
+        find.ancestor(of: find.text('Add supplier'), matching: find.byType(ElevatedButton)),
       );
       expect(addButton.onPressed, isNull);
       expect(tester.takeException(), isNull);

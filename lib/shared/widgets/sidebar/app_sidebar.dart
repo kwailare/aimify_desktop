@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/theme_mode_provider.dart';
 import '../../../features/auth/presentation/auth_controller.dart';
+import '../../../features/auth/domain/screen_visibility.dart';
 import '../../../features/sync/sync_status_tile.dart';
 import '../../offline/outbox.dart';
 import '../aimify_wordmark.dart';
@@ -97,6 +98,15 @@ class AppSidebar extends ConsumerWidget {
     final me = ref.watch(authControllerProvider).valueOrNull;
     final gold = isDark ? const Color(0xFFF2B233) : const Color(0xFFD88B00);
 
+    // Which nav items this role sees at all — a role change (or the org
+    // still loading) can hide the branch currently selected, so this is
+    // computed fresh on every build rather than cached at sign-in.
+    final visibleIndices = [
+      for (var i = 0; i < navItems.length; i++)
+        if (isScreenVisible(me?.role, AppScreen.values[i])) i,
+    ];
+    final selectedPosition = visibleIndices.indexOf(currentIndex);
+
     return Container(
       decoration: BoxDecoration(
         gradient: LinearGradient(
@@ -143,10 +153,14 @@ class AppSidebar extends ConsumerWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 14),
                 child: Stack(
                   children: [
+                    // Off the top and invisible when the selected branch
+                    // isn't in this role's list at all (a role change just
+                    // hid the screen the router is about to redirect away
+                    // from) — there is nowhere sensible to point it.
                     AnimatedPositioned(
                       duration: const Duration(milliseconds: 240),
                       curve: Curves.easeOutCubic,
-                      top: currentIndex * _itemExtent,
+                      top: selectedPosition < 0 ? -_itemHeight : selectedPosition * _itemExtent,
                       left: 0,
                       right: 0,
                       height: _itemHeight,
@@ -162,7 +176,7 @@ class AppSidebar extends ConsumerWidget {
                     ),
                     Column(
                       children: [
-                        for (var i = 0; i < navItems.length; i++)
+                        for (final i in visibleIndices)
                           Padding(
                             padding: const EdgeInsets.only(bottom: _itemGap),
                             child: _SidebarTile(
