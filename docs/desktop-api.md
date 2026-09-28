@@ -127,6 +127,18 @@ show usage before hitting a limit:
 `null` in `limits` means unlimited. The role check (`forbidden_role`) runs
 before the limit check.
 
+## Payments and subscription status
+
+`organization.currentPeriodEnd` is set once the organization has paid at
+least once (via Paystack on the website); it is the date the current paid
+period ends. `cancelAtPeriodEnd` is `true` when the owner has cancelled but
+the paid period hasn't ended yet — access and `subscriptionStatus` stay
+normal until then. `subscriptionStatus` can be `past_due` for a few days
+after a renewal fails (the app still works) before it becomes `expired`.
+There is no payment endpoint in this API: all payment is done on the website
+(`/dashboard/billing`), which is where a locked screen's "manage billing"
+link should send people.
+
 ## Base URL
 
 | Environment | URL |
@@ -237,7 +249,9 @@ Success — `200`:
     "timezone": "Africa/Lagos",
     "dateFormat": "DD/MM/YYYY",
     "subscriptionStatus": "trial",
-    "trialEndsAt": "2026-09-26T00:00:00.000Z"
+    "trialEndsAt": "2026-09-26T00:00:00.000Z",
+    "currentPeriodEnd": null,
+    "cancelAtPeriodEnd": false
   },
   "role": "Owner",
   "permissions": [
