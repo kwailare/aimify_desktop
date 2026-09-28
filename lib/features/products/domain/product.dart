@@ -20,6 +20,7 @@ class Product {
     this.maxStock,
     required this.currentStock,
     required this.status,
+    this.isPending = false,
   });
 
   final String id;
@@ -46,6 +47,10 @@ class Product {
   /// `active`, `inactive` or `archived`.
   final String status;
 
+  /// True for a product created while offline that hasn't reached the
+  /// server yet — it exists only on this computer for now.
+  final bool isPending;
+
   bool get isArchived => status == 'archived';
   bool get isOutOfStock => currentStock <= 0;
 
@@ -55,6 +60,45 @@ class Product {
 
   double get stockValueAtCost => currentStock * purchasePrice;
   double get stockValueAtRetail => currentStock * sellingPrice;
+
+  /// What this product looks like once [input] is applied.
+  Product withInput(ProductInput input, {bool? pending}) => Product(
+        id: id,
+        sku: input.sku,
+        barcode: input.barcode,
+        name: input.name,
+        description: input.description,
+        brand: input.brand,
+        imageUrl: imageUrl,
+        category: input.category,
+        unit: input.unit,
+        purchasePrice: input.purchasePrice,
+        sellingPrice: input.sellingPrice,
+        minStock: input.minStock,
+        maxStock: input.maxStock,
+        currentStock: currentStock,
+        status: status,
+        isPending: pending ?? isPending,
+      );
+
+  Product withStock(int stock) => Product(
+        id: id,
+        sku: sku,
+        barcode: barcode,
+        name: name,
+        description: description,
+        brand: brand,
+        imageUrl: imageUrl,
+        category: category,
+        unit: unit,
+        purchasePrice: purchasePrice,
+        sellingPrice: sellingPrice,
+        minStock: minStock,
+        maxStock: maxStock,
+        currentStock: stock,
+        status: status,
+        isPending: isPending,
+      );
 
   factory Product.fromJson(Map<String, dynamic> json) => Product(
         id: json['id'] as String,
@@ -105,6 +149,39 @@ class ProductInput {
   final double sellingPrice;
   final int minStock;
   final int? maxStock;
+
+  factory ProductInput.fromJson(Map<String, dynamic> json) => ProductInput(
+        sku: json['sku'] as String,
+        name: json['name'] as String,
+        barcode: json['barcode'] as String?,
+        description: json['description'] as String?,
+        brand: json['brand'] as String?,
+        category: json['category'] as String?,
+        unit: json['unit'] as String,
+        purchasePrice: (json['purchasePrice'] as num).toDouble(),
+        sellingPrice: (json['sellingPrice'] as num).toDouble(),
+        minStock: (json['minStock'] as num).toInt(),
+        maxStock: (json['maxStock'] as num?)?.toInt(),
+      );
+
+  /// A brand-new product as it looks locally before the server has it.
+  Product toLocalProduct(String id) => Product(
+        id: id,
+        sku: sku,
+        barcode: barcode,
+        name: name,
+        description: description,
+        brand: brand,
+        category: category,
+        unit: unit,
+        purchasePrice: purchasePrice,
+        sellingPrice: sellingPrice,
+        minStock: minStock,
+        maxStock: maxStock,
+        currentStock: 0,
+        status: 'active',
+        isPending: true,
+      );
 
   /// Full body for create, and for edit (nulls clear optional fields).
   Map<String, dynamic> toJson() => {

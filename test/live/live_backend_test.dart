@@ -12,6 +12,7 @@
 //   AIMIFY_PASSWORD=...          shared by the three accounts
 //   AIMIFY_OWNER_EMAIL=...       Owner, no 2FA, org on a 1-warehouse plan
 //   AIMIFY_SALES_EMAIL=...       Sales Staff in the same org
+//   AIMIFY_ACCOUNTANT_EMAIL=...  Accountant / Finance in the same org
 //   AIMIFY_2FA_EMAIL=...         Owner with two-factor on
 //   AIMIFY_2FA_SECRET=...        that account's base32 authenticator secret
 //
@@ -22,11 +23,19 @@ import 'dart:io';
 import 'package:aimify_desktop/features/auth/presentation/auth_controller.dart';
 import 'package:aimify_desktop/features/inventory/data/inventory_repository.dart';
 import 'package:aimify_desktop/features/inventory/domain/allowed_movement_types.dart';
+import 'package:aimify_desktop/features/parties/data/parties_repository.dart';
+import 'package:aimify_desktop/features/parties/domain/party.dart';
+import 'package:aimify_desktop/features/sync/sync_engine.dart';
+import 'package:aimify_desktop/shared/offline/connection.dart';
+import 'package:aimify_desktop/shared/offline/outbox.dart';
+import 'package:aimify_desktop/shared/services/api_client.dart';
+import 'package:http/http.dart' as http;
 import 'package:aimify_desktop/features/inventory/domain/stock_movement.dart';
 import 'package:aimify_desktop/features/products/data/catalog_repository.dart';
 import 'package:aimify_desktop/features/products/data/products_repository.dart';
 import 'package:aimify_desktop/features/products/domain/product.dart';
 import 'package:aimify_desktop/features/warehouses/data/warehouses_repository.dart';
+import 'package:aimify_desktop/shared/offline/local_store.dart';
 import 'package:aimify_desktop/shared/services/api_exception.dart';
 import 'package:aimify_desktop/shared/services/authed_api.dart';
 import 'package:aimify_desktop/shared/services/secure_token_storage.dart';
@@ -41,17 +50,23 @@ final _env = Platform.environment;
 final _live = _env['AIMIFY_LIVE'] == '1';
 String _need(String name) => _env[name] ?? (throw StateError('Set $name'));
 
-ProviderContainer _newSession() {
+ProviderContainer _newSession({LocalStore? store}) {
   final container = ProviderContainer(
-    overrides: [secureTokenStorageProvider.overrideWithValue(FakeTokenStorage())],
+    overrides: [
+      secureTokenStorageProvider.overrideWithValue(FakeTokenStorage()),
+      localStoreProvider.overrideWithValue(store ?? MemoryLocalStore()),
+    ],
   );
   addTearDown(container.dispose);
   return container;
 }
 
 /// A real signed-in session: the same login path the login screen uses.
-Future<ProviderContainer> _signIn(String email, {String? code}) async {
-  final container = _newSession();
+Future<ProviderContainer> _signIn(String email, {String? code}) =>
+    _signInWithStore(email, null, code: code);
+
+Future<ProviderContainer> _signInWithStore(String email, LocalStore? store, {String? code}) async {
+  final container = _newSession(store: store);
   await container.read(authControllerProvider.future);
   await container.read(authControllerProvider.notifier).login(
         email: email,
@@ -192,8 +207,8 @@ void main() {
     // --- products: create (custom category/unit register themselves)
     final products = container.read(productsProvider.notifier);
     expect(await container.read(productsProvider.future), isEmpty);
-    final rice = await products.add(_input('QA-RICE', min: 30));
-    final oil = await products.add(_input('QA-OIL', min: 5, cost: 250));
+    final rice = (await products.add(_input('QA-RICE', min: 30))).value!;
+    final oil = (await products.add(_input('QA-OIL', min: 5, cost: 250))).value!;
     expect(rice.currentStock, 0, reason: 'stock only changes through movements');
     expect(rice.brand, 'QA Brand');
     expect(container.read(productListProvider), hasLength(2));
@@ -251,10 +266,10 @@ void main() {
     final warehouseId = container.read(activeWarehousesProvider).single.id;
 
     Future<MovementResult> record(String productId, StockMovementType type, int entered,
-        {bool down = false}) {
+        {bool down = false}) async {
       final current =
           container.read(productListProvider).firstWhere((p) => p.id == productId).currentStock;
-      return movements.record(
+      final outcome = await movements.record(
         productId: productId,
         warehouseId: warehouseId,
         type: type,
@@ -266,6 +281,8 @@ void main() {
         ),
         reason: 'QA ${type.label}',
       );
+      expect(outcome.queued, isFalse, reason: 'a good connection sends straight away');
+      return outcome.value!;
     }
 
     var result = await record(rice.id, StockMovementType.stockIn, 50);
@@ -327,7 +344,8 @@ void main() {
     final me = container.read(authControllerProvider).value!;
 
     expect(me.role, 'Sales Staff');
-    expect(me.permissions, ['stock.out']);
+    // Sales Staff record stock out and work with customers — nothing else.
+    expect(me.permissions, ['stock.out', 'customers.read', 'customers.write']);
     expect(allowedMovementTypes(me.permissions), [StockMovementType.stockOut]);
 
     // reading is open to every role
@@ -379,13 +397,14 @@ void main() {
           reason: 'QA restock',
         );
     await container.read(productsProvider.notifier).refresh();
-    final result = await movements.record(
+    final result = (await movements.record(
       productId: rice.id,
       warehouseId: warehouseId,
       type: StockMovementType.stockOut,
       quantity: -4,
       reason: 'QA sale',
-    );
+    ))
+        .value!;
     expect(result.currentStock, 6);
     expect(result.movement.userId, me.user.id);
 
@@ -393,6 +412,342 @@ void main() {
     final ledger = container.read(movementListProvider);
     expect(ledger.map((m) => m.userId).toSet().length, greaterThan(1));
   }, skip: skip, timeout: const Timeout(Duration(minutes: 3)));
+
+  test('hybrid: changes made offline sync exactly once when the connection is good', () async {
+    final owner = await _signIn(_need('AIMIFY_OWNER_EMAIL'));
+    final me = owner.read(authControllerProvider).value!;
+    final connection = owner.read(connectionProvider.notifier);
+    final sync = owner.read(syncEngineProvider.notifier);
+    final products = owner.read(productsProvider.notifier);
+    final movements = owner.read(movementsProvider.notifier);
+
+    final all = await owner.read(productsProvider.future);
+    final rice = all.firstWhere((p) => p.sku == 'QA-RICE');
+    await owner.read(warehousesProvider.future);
+    final warehouseId = owner.read(activeWarehousesProvider).single.id;
+    await owner.read(outboxProvider.future);
+    final riceBefore = rice.currentStock;
+
+    // --- go offline: everything is saved locally, nothing reaches the server
+    connection.set(ConnectionQuality.offline);
+
+    final created = await products.add(_input('QA-OFFLINE', cost: 40));
+    expect(created.queued, isTrue);
+    final local = owner.read(productListProvider).firstWhere((p) => p.sku == 'QA-OFFLINE');
+    expect(local.isPending, isTrue);
+
+    await movements.record(
+      productId: local.id,
+      warehouseId: warehouseId,
+      type: StockMovementType.stockIn,
+      quantity: 12,
+      reason: 'QA offline opening stock',
+    );
+    await movements.record(
+      productId: rice.id,
+      warehouseId: warehouseId,
+      type: StockMovementType.stockOut,
+      quantity: -2,
+      reason: 'QA offline sale',
+    );
+
+    expect(owner.read(pendingCountProvider), 3);
+    expect(owner.read(productListProvider).firstWhere((p) => p.id == local.id).currentStock, 12);
+    expect(owner.read(productListProvider).firstWhere((p) => p.id == rice.id).currentStock, riceBefore - 2);
+    // The server knows nothing yet.
+    final serverBefore = await owner.read(productsRepositoryProvider).listFresh();
+    expect(serverBefore.any((p) => p.sku == 'QA-OFFLINE'), isFalse);
+    expect(serverBefore.firstWhere((p) => p.id == rice.id).currentStock, riceBefore);
+
+    // --- the connection is good again: the queue is sent, in order
+    connection.set(ConnectionQuality.good);
+    await sync.flush();
+
+    expect(owner.read(pendingCountProvider), 0, reason: 'everything synced');
+    final serverAfter = await owner.read(productsRepositoryProvider).listFresh();
+    final offlineProduct = serverAfter.firstWhere((p) => p.sku == 'QA-OFFLINE');
+    expect(offlineProduct.currentStock, 12, reason: 'the movement followed the product to its real id');
+    expect(serverAfter.firstWhere((p) => p.id == rice.id).currentStock, riceBefore - 2);
+    final ledger = await owner.read(inventoryRepositoryProvider).movementsFresh();
+    expect(ledger.where((m) => m.reason == 'QA offline sale'), hasLength(1));
+    expect(ledger.where((m) => m.reason == 'QA offline opening stock'), hasLength(1));
+    expect(ledger.firstWhere((m) => m.reason == 'QA offline sale').userId, me.user.id);
+
+    // --- a send whose answer was lost must not be applied twice: the movement
+    // really lands, then the app (which never heard back) queues it as attempted.
+    final riceNow = (await owner.read(productsRepositoryProvider).listFresh())
+        .firstWhere((p) => p.id == rice.id)
+        .currentStock;
+    await owner.read(inventoryRepositoryProvider).record(
+          productId: rice.id,
+          warehouseId: warehouseId,
+          type: StockMovementType.stockIn,
+          quantity: 1,
+          reason: 'QA lost response',
+        );
+    await owner.read(outboxProvider.notifier).add(
+          OutboxOp(
+            id: newOpId(),
+            kind: OpKind.movement,
+            payload: {
+              'productId': rice.id,
+              'warehouseId': warehouseId,
+              'type': 'stock_in',
+              'quantity': 1,
+              'reason': 'QA lost response',
+            },
+            createdAt: DateTime.now().subtract(const Duration(seconds: 30)),
+            attempted: true,
+          ),
+        );
+    await sync.flush();
+    expect(owner.read(pendingCountProvider), 0);
+    final riceFinal = (await owner.read(productsRepositoryProvider).listFresh())
+        .firstWhere((p) => p.id == rice.id)
+        .currentStock;
+    expect(riceFinal, riceNow + 1, reason: 'counted once, not twice');
+
+    // --- offline edit and archive sync too
+    connection.set(ConnectionQuality.offline);
+    await products.edit(offlineProduct.id, _input('QA-OFFLINE', cost: 55));
+    await products.archive(offlineProduct.id);
+    connection.set(ConnectionQuality.good);
+    await sync.flush();
+    expect(owner.read(pendingCountProvider), 0);
+    final skus = (await owner.read(productsRepositoryProvider).listFresh()).map((p) => p.sku);
+    expect(skus, isNot(contains('QA-OFFLINE')));
+
+    // --- a refusal is kept, with a reason, instead of vanishing: Sales Staff
+    // may not create products, even offline.
+    final sales = await _signIn(_need('AIMIFY_SALES_EMAIL'));
+    await sales.read(productsProvider.future);
+    await sales.read(outboxProvider.future);
+    final salesConnection = sales.read(connectionProvider.notifier);
+    salesConnection.set(ConnectionQuality.offline);
+    await sales.read(productsProvider.notifier).add(_input('QA-SALES-OFFLINE'));
+    expect(sales.read(pendingCountProvider), 1);
+    salesConnection.set(ConnectionQuality.good);
+    await sales.read(syncEngineProvider.notifier).flush();
+
+    final failed = sales.read(failedOpsProvider);
+    expect(failed, hasLength(1));
+    expect(failed.single.error, contains('Sales Staff'));
+    expect(sales.read(pendingCountProvider), 0);
+  }, skip: skip, timeout: const Timeout(Duration(minutes: 3)));
+
+  test('the session and data survive going offline: reads come from the saved copy', () async {
+    final store = MemoryLocalStore();
+    final container = await _signInWithStore(_need('AIMIFY_OWNER_EMAIL'), store);
+    await container.read(productsProvider.future);
+    await container.read(warehousesProvider.future);
+    expect(container.read(staleSinceProvider), isNull);
+
+    // Same person, same saved data, but the server is unreachable: a client
+    // that can never reach anything behaves like a machine with no network.
+    final token = (await container.read(secureTokenStorageProvider).readToken())!;
+    final offline = ProviderContainer(
+      overrides: [
+        secureTokenStorageProvider.overrideWithValue(FakeTokenStorage()..saveToken(token)),
+        localStoreProvider.overrideWithValue(store),
+        apiClientProvider.overrideWithValue(ApiClient(_DeadNetworkClient())),
+      ],
+    );
+    addTearDown(offline.dispose);
+
+    final me = await offline.read(authControllerProvider.future);
+    expect(me, isNotNull, reason: 'reopens signed in from the saved session');
+    expect(me!.role, 'Owner');
+    expect(me.permissions, contains('stock.out'));
+
+    final saved = await offline.read(productsProvider.future);
+    expect(saved.any((p) => p.sku == 'QA-RICE'), isTrue, reason: 'products come from the saved copy');
+    expect(offline.read(staleSinceProvider), isNotNull);
+    expect(offline.read(connectionProvider), ConnectionQuality.offline);
+  }, skip: skip, timeout: const Timeout(Duration(minutes: 2)));
+
+  test('customers, suppliers and the credit ledger: roles, ledger, offline and exactly-once', () async {
+    // ---- Owner: full cycle against the real API
+    final owner = await _signIn(_need('AIMIFY_OWNER_EMAIL'));
+    final me = owner.read(authControllerProvider).value!;
+    expect(me.permissions, containsAll(['customers.read', 'customers.write', 'suppliers.read',
+        'suppliers.write', 'credit.record']));
+
+    await owner.read(partiesProvider(PartyType.customer).future);
+    await owner.read(partiesProvider(PartyType.supplier).future);
+    await owner.read(outboxProvider.future);
+    final customers = owner.read(partiesProvider(PartyType.customer).notifier);
+    final suppliers = owner.read(partiesProvider(PartyType.supplier).notifier);
+    final credit = owner.read(creditServiceProvider);
+
+    final createdCustomer = await customers.add(const PartyInput(
+      type: PartyType.customer,
+      name: 'QA Blessing Store',
+      phone: '+234 700 000 0001',
+      creditLimit: 5000,
+    ));
+    expect(createdCustomer.queued, isFalse);
+    final customer = createdCustomer.value!;
+    expect(customer.creditLimit, 5000);
+    expect(customer.balanceOwed, 0);
+
+    final createdSupplier = await suppliers.add(const PartyInput(
+      type: PartyType.supplier,
+      name: 'QA Golden Grains',
+      contactPerson: 'Musa',
+      phone: '+234 800 000 0002',
+    ));
+    final supplier = createdSupplier.value!;
+    expect(supplier.contactPerson, 'Musa');
+
+    await customers.edit(customer.id, const PartyInput(
+      type: PartyType.customer,
+      name: 'QA Blessing Store',
+      phone: '+234 700 000 0001',
+      creditLimit: 9000,
+    ));
+    expect(owner.read(partyListProvider(PartyType.customer)).single.creditLimit, 9000);
+
+    // charge, part payment, the overpayment refusal
+    final charge = await credit.record(
+      partyType: PartyType.customer, partyId: customer.id, kind: CreditKind.charge, amount: 4000, note: 'Invoice 1',
+    );
+    expect(charge.queued, isFalse);
+    expect(charge.value!.balanceOwed, 4000);
+    final part = await credit.record(
+      partyType: PartyType.customer, partyId: customer.id, kind: CreditKind.payment, amount: 1500.5,
+    );
+    expect(part.value!.balanceOwed, 2499.5);
+    expect(owner.read(partyListProvider(PartyType.customer)).single.balanceOwed, 2499.5);
+
+    try {
+      await credit.record(
+        partyType: PartyType.customer, partyId: customer.id, kind: CreditKind.payment, amount: 99999,
+      );
+      fail('an overpayment should be refused');
+    } on ApiException catch (e) {
+      expect(e.code, 'overpayment');
+      expect(e.statusCode, 400);
+    }
+
+    // supplier side
+    final invoice = await credit.record(
+      partyType: PartyType.supplier, partyId: supplier.id, kind: CreditKind.charge, amount: 700,
+    );
+    expect(invoice.value!.balanceOwed, 700);
+
+    // the ledger records who did each entry
+    final ledger = await owner.read(partiesRepositoryProvider).entries(PartyType.customer, customer.id);
+    expect(ledger.map((e) => e.kind), [CreditKind.payment, CreditKind.charge]);
+    expect(ledger.every((e) => e.userId == me.user.id), isTrue);
+
+    // ---- retrying the same entry (an answer lost in transit) records it once
+    final repo = owner.read(partiesRepositoryProvider);
+    final first = await repo.recordEntry(
+      partyType: PartyType.supplier, partyId: supplier.id, kind: CreditKind.charge,
+      amount: 50, clientRef: 'qa-live-ref-1',
+    );
+    final again = await repo.recordEntry(
+      partyType: PartyType.supplier, partyId: supplier.id, kind: CreditKind.charge,
+      amount: 50, clientRef: 'qa-live-ref-1',
+    );
+    expect(again.entry.id, first.entry.id);
+    expect(again.balanceOwed, 750, reason: '700 + 50, counted once');
+
+    // ---- Sales Staff: customers yes, suppliers no, no credit.record
+    final sales = await _signIn(_need('AIMIFY_SALES_EMAIL'));
+    final salesMe = sales.read(authControllerProvider).value!;
+    expect(salesMe.permissions, containsAll(['customers.read', 'customers.write']));
+    expect(salesMe.permissions, isNot(contains('suppliers.read')));
+    expect(salesMe.permissions, isNot(contains('credit.record')));
+
+    final salesCustomers = await sales.read(partiesProvider(PartyType.customer).future);
+    expect(salesCustomers.single.name, 'QA Blessing Store');
+    expect(salesCustomers.single.balanceOwed, 2499.5);
+    // The app doesn't even ask for what the role can't read.
+    expect(await sales.read(partiesProvider(PartyType.supplier).future), isEmpty);
+    // ...and the server agrees when asked directly.
+    await _expectApiError(
+      () => sales.read(authedApiProvider).get('http://localhost:3000/api/v1/suppliers'),
+      (e) => e.isForbiddenRole && e.requiredPermission == 'suppliers.read',
+    );
+    await _expectApiError(
+      () => sales.read(creditServiceProvider).record(
+            partyType: PartyType.customer, partyId: customer.id, kind: CreditKind.payment, amount: 1,
+          ),
+      (e) => e.isForbiddenRole && e.requiredPermission == 'credit.record',
+    );
+    final byStaff = await sales.read(partiesProvider(PartyType.customer).notifier).add(
+          const PartyInput(type: PartyType.customer, name: 'QA Sales Staff Customer'),
+        );
+    expect(byStaff.queued, isFalse);
+
+    // ---- Accountant: reads both sides, cannot edit, can record payments
+    final accountant = await _signIn(_need('AIMIFY_ACCOUNTANT_EMAIL'));
+    final acctMe = accountant.read(authControllerProvider).value!;
+    expect(acctMe.permissions, containsAll(['customers.read', 'suppliers.read', 'credit.record']));
+    expect(acctMe.permissions, isNot(contains('customers.write')));
+    await accountant.read(partiesProvider(PartyType.customer).future);
+    await accountant.read(partiesProvider(PartyType.supplier).future);
+    expect(accountant.read(partyListProvider(PartyType.supplier)).single.balanceOwed, 750);
+    await _expectApiError(
+      () => accountant.read(partiesProvider(PartyType.customer).notifier).add(
+            const PartyInput(type: PartyType.customer, name: 'nope'),
+          ),
+      (e) => e.isForbiddenRole && e.requiredPermission == 'customers.write',
+    );
+    final acctPayment = await accountant.read(creditServiceProvider).record(
+          partyType: PartyType.supplier, partyId: supplier.id, kind: CreditKind.payment, amount: 250,
+        );
+    expect(acctPayment.value!.balanceOwed, 500);
+
+    // ---- hybrid: a customer, a credit sale and a payment recorded offline, then synced
+    await owner.read(outboxProvider.future);
+    final connection = owner.read(connectionProvider.notifier);
+    connection.set(ConnectionQuality.offline);
+
+    final offlineCustomer = await customers.add(
+      const PartyInput(type: PartyType.customer, name: 'QA Offline Traders', creditLimit: 2000),
+    );
+    expect(offlineCustomer.queued, isTrue);
+    final local = owner
+        .read(partyListProvider(PartyType.customer))
+        .firstWhere((c) => c.name == 'QA Offline Traders');
+    expect(local.isPending, isTrue);
+
+    await credit.record(partyType: PartyType.customer, partyId: local.id, kind: CreditKind.charge, amount: 800);
+    await credit.record(partyType: PartyType.customer, partyId: local.id, kind: CreditKind.payment, amount: 300);
+    // and a payment on an existing customer
+    await credit.record(partyType: PartyType.customer, partyId: customer.id, kind: CreditKind.payment, amount: 499.5);
+
+    expect(owner.read(pendingCountProvider), 4);
+    expect(owner.read(partyListProvider(PartyType.customer)).firstWhere((c) => c.id == local.id).balanceOwed, 500);
+    expect(owner.read(partyListProvider(PartyType.customer)).firstWhere((c) => c.id == customer.id).balanceOwed, 2000);
+    // the server hasn't seen any of it
+    final before = await repo.listFresh(PartyType.customer);
+    expect(before.any((c) => c.name == 'QA Offline Traders'), isFalse);
+    expect(before.firstWhere((c) => c.id == customer.id).balanceOwed, 2499.5);
+
+    connection.set(ConnectionQuality.good);
+    await owner.read(syncEngineProvider.notifier).flush();
+    expect(owner.read(pendingCountProvider), 0);
+
+    final after = await repo.listFresh(PartyType.customer);
+    final synced = after.firstWhere((c) => c.name == 'QA Offline Traders');
+    expect(synced.creditLimit, 2000);
+    expect(synced.balanceOwed, 500, reason: 'charge 800, payment 300 followed the customer to its real id');
+    expect(after.firstWhere((c) => c.id == customer.id).balanceOwed, 2000);
+
+    // syncing again sends nothing new: nothing was double counted
+    await owner.read(syncEngineProvider.notifier).flush();
+    final finalList = await repo.listFresh(PartyType.customer);
+    expect(finalList.firstWhere((c) => c.id == synced.id).balanceOwed, 500);
+
+    // ---- archive keeps the debt on record
+    await customers.archive(customer.id);
+    expect(owner.read(partyListProvider(PartyType.customer)).any((c) => c.id == customer.id), isFalse);
+    final archivedLedger = await repo.entries(PartyType.customer, customer.id);
+    expect(archivedLedger, hasLength(3), reason: 'charge, part payment and the offline payment');
+  }, skip: skip, timeout: const Timeout(Duration(minutes: 4)));
 
   test('logout revokes the token: the next call is a 401 that ends the session', () async {
     final container = await _signIn(_need('AIMIFY_SALES_EMAIL'));
@@ -413,4 +768,12 @@ void main() {
     );
     expect(stale.read(sessionEndedMessageProvider), contains('session ended'));
   }, skip: skip, timeout: const Timeout(Duration(minutes: 3)));
+}
+
+/// An HTTP client that can never reach anything, like a machine with no
+/// network.
+class _DeadNetworkClient extends http.BaseClient {
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) =>
+      Future.error(const SocketException('No network (test)'));
 }

@@ -65,6 +65,7 @@ class StockMovement {
     required this.previousStock,
     required this.newStock,
     required this.createdAt,
+    this.isPending = false,
   });
 
   final String id;
@@ -80,6 +81,10 @@ class StockMovement {
   final int previousStock;
   final int newStock;
   final DateTime createdAt;
+
+  /// True for a movement recorded offline that hasn't reached the server
+  /// yet; [previousStock]/[newStock] are then this computer's best estimate.
+  final bool isPending;
 
   factory StockMovement.fromJson(Map<String, dynamic> json) => StockMovement(
         id: json['id'] as String,

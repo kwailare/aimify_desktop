@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/theme_mode_provider.dart';
 import '../../../features/auth/presentation/auth_controller.dart';
+import '../../../features/sync/sync_status_tile.dart';
+import '../../offline/outbox.dart';
 import '../aimify_wordmark.dart';
 
 class _NavItem {
@@ -24,15 +26,10 @@ const navItems = [
   _NavItem('Products', Icons.inventory_2_outlined, Icons.inventory_2),
   _NavItem('Inventory', Icons.warehouse_outlined, Icons.warehouse),
   _NavItem('Purchases', Icons.shopping_cart_outlined, Icons.shopping_cart, localOnly: true),
-  _NavItem('Suppliers', Icons.local_shipping_outlined, Icons.local_shipping, localOnly: true),
-  _NavItem('Customers', Icons.people_outline, Icons.people, localOnly: true),
+  _NavItem('Suppliers', Icons.local_shipping_outlined, Icons.local_shipping),
+  _NavItem('Customers', Icons.people_outline, Icons.people),
   _NavItem('Expenses', Icons.receipt_long_outlined, Icons.receipt_long, localOnly: true),
-  _NavItem(
-    'Credits & Debts',
-    Icons.account_balance_wallet_outlined,
-    Icons.account_balance_wallet,
-    localOnly: true,
-  ),
+  _NavItem('Credits & Debts', Icons.account_balance_wallet_outlined, Icons.account_balance_wallet),
   _NavItem('Warehouses', Icons.store_outlined, Icons.store),
   _NavItem('Reports', Icons.bar_chart_outlined, Icons.bar_chart),
 ];
@@ -61,6 +58,37 @@ class AppSidebar extends ConsumerWidget {
   /// True when rendered as a floating overlay panel (narrow windows) —
   /// adds a shadow so it visually separates from the content behind it.
   final bool elevated;
+
+  /// Signing out with changes still waiting to sync asks first: they are
+  /// kept on this computer and sync after the next sign-in, but the person
+  /// should know they haven't reached Aimify yet.
+  Future<void> _signOut(BuildContext context, WidgetRef ref) async {
+    final pending = ref.read(pendingCountProvider);
+    if (pending > 0) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Sign out with unsynced changes?'),
+          content: Text(
+            '$pending change(s) are saved on this computer but have not reached Aimify yet. '
+            'They are kept, and will sync the next time you sign in with a good connection.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Stay signed in'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Sign out'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+    }
+    await ref.read(authControllerProvider.notifier).logout();
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -199,7 +227,9 @@ class AppSidebar extends ConsumerWidget {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 6),
+                    const SyncStatusTile(),
+                    const SizedBox(height: 6),
                   ],
                   Row(
                     children: [
@@ -217,7 +247,7 @@ class AppSidebar extends ConsumerWidget {
                       Expanded(
                         child: IconButton(
                           tooltip: 'Sign out',
-                          onPressed: () => ref.read(authControllerProvider.notifier).logout(),
+                          onPressed: () => _signOut(context, ref),
                           icon: const Icon(Icons.logout, size: 20),
                         ),
                       ),
@@ -297,7 +327,7 @@ class _SidebarTileState extends State<_SidebarTile> {
                   ),
                   if (widget.item.localOnly)
                     Tooltip(
-                      message: 'No online backend yet — works on this computer only',
+                      message: 'No online backend yet — saved on this computer only',
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(

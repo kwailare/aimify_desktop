@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../shared/utils/formatters.dart';
 import '../../../shared/utils/friendly_error.dart';
 import '../data/catalog_repository.dart';
 import '../data/products_repository.dart';
@@ -116,17 +117,41 @@ class _ProductFormDialogState extends ConsumerState<ProductFormDialog> {
 
     final notifier = ref.read(productsProvider.notifier);
     try {
-      final saved = _editing
+      final outcome = _editing
           ? await notifier.edit(widget.product!.id, input)
           : await notifier.add(input);
+      final productId = _editing ? widget.product!.id : outcome.value?.id;
+
+      // Saved on this computer to sync later: pictures need a connection, so
+      // say so instead of silently dropping the one that was chosen.
+      if (outcome.queued) {
+        ref.invalidate(catalogProvider);
+        if (!mounted) return;
+        final hadPicture = _pickedImage != null;
+        final messenger = ScaffoldMessenger.of(context);
+        Navigator.of(context).pop(true);
+        messenger
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(
+              content: Text(
+                hadPicture
+                    ? 'Saved on this computer — it will sync when the connection is good. The '
+                        'picture needs a connection: add it once you are back online.'
+                    : 'Saved on this computer — it will sync when the connection is good.',
+              ),
+            ),
+          );
+        return;
+      }
 
       // The product itself is saved at this point. If only the picture
       // fails, keep the dialog open and say so — closing would hide it.
       try {
         if (_pickedImage != null) {
-          await notifier.setImage(saved.id, bytes: _pickedImage!, filename: _pickedImageName ?? 'image');
+          await notifier.setImage(productId!, bytes: _pickedImage!, filename: _pickedImageName ?? 'image');
         } else if (_removeImage && widget.product?.imageUrl != null) {
-          await notifier.clearImage(saved.id);
+          await notifier.clearImage(productId!);
         }
       } catch (e) {
         if (mounted) {
@@ -155,6 +180,15 @@ class _ProductFormDialogState extends ConsumerState<ProductFormDialog> {
     if (v == null || v.trim().isEmpty) return 'Required';
     if (max != null && v.trim().length > max) return 'At most $max characters';
     return null;
+  }
+
+  /// What the selling price comes to with the organization's tax, shown as
+  /// the person types. Prices are stored without tax.
+  String? _withTaxHint() {
+    if (!hasTax) return null;
+    final price = double.tryParse(_sellingPrice.text.trim());
+    if (price == null || price < 0) return 'Price excludes $taxLabel';
+    return '${currencyFormat.format(priceWithTax(price))} with $taxLabel';
   }
 
   String? _price(String? v) {
@@ -282,7 +316,11 @@ class _ProductFormDialogState extends ConsumerState<ProductFormDialog> {
                       child: TextFormField(
                         controller: _sellingPrice,
                         keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                        decoration: const InputDecoration(labelText: 'Selling price *'),
+                        onChanged: (_) => setState(() {}),
+                        decoration: InputDecoration(
+                          labelText: 'Selling price *',
+                          helperText: _withTaxHint(),
+                        ),
                         validator: _price,
                       ),
                     ),

@@ -2,22 +2,23 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/utils/formatters.dart';
-import '../../../shared/widgets/local_only_badge.dart';
 import '../../../shared/widgets/section_header.dart';
 import '../../../shared/widgets/stat_card.dart';
 import '../../../shared/widgets/status_pill.dart';
-import '../../customers/data/customers_repository.dart';
-import '../../customers/domain/customer.dart';
-import '../../suppliers/data/suppliers_repository.dart';
-import '../../suppliers/domain/supplier.dart';
-import 'record_payment_dialog.dart';
+import '../../auth/domain/permissions.dart';
+import '../../auth/presentation/permissions_provider.dart';
+import '../../parties/data/parties_repository.dart';
+import '../../parties/domain/party.dart';
+import '../../parties/presentation/credit_entry_dialog.dart';
+import '../../parties/presentation/party_history_dialog.dart';
 
 /// Money owed to the business (customer balances) and money the business
-/// owes (supplier balances), in one place — credit tracking for customers
-/// and suppliers. LOCAL ONLY: it reads the same on-computer
-/// [customersProvider] / [suppliersProvider] as those modules' own screens
-/// (no backend exists for either yet), so it is a different view over the
-/// same data, not a separate source of truth.
+/// owes (supplier balances), in one place. It is a view over the same live
+/// customers and suppliers as those screens, and each balance is the sum of
+/// that party's credit ledger, so nothing here can drift from the source.
+///
+/// Reading a side needs `customers.read` / `suppliers.read`; recording a
+/// payment needs `credit.record`.
 class CreditsDebtsScreen extends ConsumerStatefulWidget {
   const CreditsDebtsScreen({super.key});
 
@@ -44,8 +45,11 @@ class _CreditsDebtsScreenState extends ConsumerState<CreditsDebtsScreen>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final customers = ref.watch(customersProvider);
-    final suppliers = ref.watch(suppliersProvider);
+    final canSeeCustomers = hasPermission(ref, Permissions.customersRead);
+    final canSeeSuppliers = hasPermission(ref, Permissions.suppliersRead);
+    final canRecord = hasPermission(ref, Permissions.creditRecord);
+    final customers = ref.watch(partyListProvider(PartyType.customer));
+    final suppliers = ref.watch(partyListProvider(PartyType.supplier));
 
     final totalReceivable = customers.fold(0.0, (sum, c) => sum + c.balanceOwed);
     final totalPayable = suppliers.fold(0.0, (sum, s) => sum + s.balanceOwed);
@@ -60,7 +64,6 @@ class _CreditsDebtsScreenState extends ConsumerState<CreditsDebtsScreen>
             const SectionHeader(
               title: 'Credits & Debts',
               subtitle: 'Money owed to you, and money you owe suppliers',
-              badge: LocalOnlyBadge(),
             ),
             const SizedBox(height: 20),
             LayoutBuilder(
@@ -68,22 +71,24 @@ class _CreditsDebtsScreenState extends ConsumerState<CreditsDebtsScreen>
                 final cards = [
                   StatCard(
                     label: 'Total receivable',
-                    value: currencyFormat.format(totalReceivable),
+                    value: canSeeCustomers ? currencyFormat.format(totalReceivable) : '—',
                     caption: 'Owed to you by customers',
                     icon: Icons.call_received,
                     accentColor: const Color(0xFF2F8F5B),
                   ),
                   StatCard(
                     label: 'Total payable',
-                    value: currencyFormat.format(totalPayable),
+                    value: canSeeSuppliers ? currencyFormat.format(totalPayable) : '—',
                     caption: 'You owe suppliers',
                     icon: Icons.call_made,
                     accentColor: theme.colorScheme.error,
                   ),
                   StatCard(
                     label: 'Net position',
-                    value: '${net >= 0 ? '+' : '-'}${currencyFormat.format(net.abs())}',
-                    caption: net >= 0 ? 'More owed to you than you owe' : 'You owe more than you\'re owed',
+                    value: (canSeeCustomers && canSeeSuppliers)
+                        ? '${net >= 0 ? '+' : '-'}${currencyFormat.format(net.abs())}'
+                        : '—',
+                    caption: net >= 0 ? 'More owed to you than you owe' : "You owe more than you're owed",
                     icon: Icons.balance,
                     accentColor: net >= 0 ? const Color(0xFF2F8F5B) : theme.colorScheme.error,
                   ),
@@ -120,8 +125,22 @@ class _CreditsDebtsScreenState extends ConsumerState<CreditsDebtsScreen>
               child: TabBarView(
                 controller: _tabController,
                 children: [
-                  _CustomerDebtsTable(customers: customers),
-                  _SupplierCreditsTable(suppliers: suppliers),
+                  _DebtsTable(
+                    parties: customers,
+                    allowed: canSeeCustomers,
+                    canRecord: canRecord,
+                    type: PartyType.customer,
+                    emptyMessage: 'No customer currently owes you anything.',
+                    deniedMessage: "Your role can't view customers.",
+                  ),
+                  _DebtsTable(
+                    parties: suppliers,
+                    allowed: canSeeSuppliers,
+                    canRecord: canRecord,
+                    type: PartyType.supplier,
+                    emptyMessage: "You don't owe any supplier anything right now.",
+                    deniedMessage: "Your role can't view suppliers.",
+                  ),
                 ],
               ),
             ),
@@ -132,19 +151,33 @@ class _CreditsDebtsScreenState extends ConsumerState<CreditsDebtsScreen>
   }
 }
 
-class _CustomerDebtsTable extends ConsumerWidget {
-  const _CustomerDebtsTable({required this.customers});
+class _DebtsTable extends ConsumerWidget {
+  const _DebtsTable({
+    required this.parties,
+    required this.allowed,
+    required this.canRecord,
+    required this.type,
+    required this.emptyMessage,
+    required this.deniedMessage,
+  });
 
-  final List<Customer> customers;
+  final List<Party> parties;
+  final bool allowed;
+  final bool canRecord;
+  final PartyType type;
+  final String emptyMessage;
+  final String deniedMessage;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final owing = customers.where((c) => c.balanceOwed > 0).toList()
+    if (!allowed) return _Message(deniedMessage);
+
+    final owing = parties.where((p) => p.balanceOwed > 0).toList()
       ..sort((a, b) => b.balanceOwed.compareTo(a.balanceOwed));
 
-    if (owing.isEmpty) {
-      return const _EmptyState(message: 'No customer currently owes you anything.');
-    }
+    if (owing.isEmpty) return _Message(emptyMessage);
+
+    final isCustomer = type == PartyType.customer;
 
     return Card(
       clipBehavior: Clip.antiAlias,
@@ -152,40 +185,50 @@ class _CustomerDebtsTable extends ConsumerWidget {
         child: SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: DataTable(
-            columns: const [
-              DataColumn(label: Text('Customer')),
-              DataColumn(label: Text('Phone')),
-              DataColumn(label: Text('Credit limit'), numeric: true),
-              DataColumn(label: Text('Balance owed'), numeric: true),
-              DataColumn(label: Text('Status')),
-              DataColumn(label: Text('')),
+            showCheckboxColumn: false,
+            columns: [
+              DataColumn(label: Text(type.label)),
+              DataColumn(label: Text(isCustomer ? 'Phone' : 'Contact person')),
+              if (isCustomer) const DataColumn(label: Text('Credit limit'), numeric: true),
+              const DataColumn(label: Text('Balance owed'), numeric: true),
+              const DataColumn(label: Text('Status')),
+              const DataColumn(label: Text('')),
             ],
             rows: [
-              for (final customer in owing)
+              for (final party in owing)
                 DataRow(
+                  onSelectChanged: (_) => showDialog(
+                    context: context,
+                    builder: (_) => PartyHistoryDialog(party: party),
+                  ),
                   cells: [
-                    DataCell(Text(customer.name)),
-                    DataCell(Text(customer.phone)),
-                    DataCell(Text(currencyFormat.format(customer.creditLimit))),
-                    DataCell(Text(currencyFormat.format(customer.balanceOwed))),
                     DataCell(
-                      customer.balanceOwed >= customer.creditLimit
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 240),
+                        child: Text(party.name, overflow: TextOverflow.ellipsis),
+                      ),
+                    ),
+                    DataCell(Text((isCustomer ? party.phone : party.contactPerson) ?? '—')),
+                    if (isCustomer)
+                      DataCell(Text(party.creditLimit > 0 ? currencyFormat.format(party.creditLimit) : '—')),
+                    DataCell(Text(currencyFormat.format(party.balanceOwed))),
+                    DataCell(
+                      party.isAtCreditLimit
                           ? const StatusPill(label: 'At limit', tone: StatusTone.negative)
                           : const StatusPill(label: 'Owing', tone: StatusTone.warning),
                     ),
                     DataCell(
-                      TextButton(
-                        onPressed: () => showDialog(
-                          context: context,
-                          builder: (_) => RecordPaymentDialog(
-                            title: 'Record payment from ${customer.name}',
-                            currentBalance: customer.balanceOwed,
-                            onSubmit: (amount) => ref
-                                .read(customersProvider.notifier)
-                                .recordPayment(customer.id, amount),
-                          ),
+                      Tooltip(
+                        message: canRecord ? '' : "Your role can't record payments",
+                        child: TextButton(
+                          onPressed: !canRecord
+                              ? null
+                              : () => showDialog(
+                                    context: context,
+                                    builder: (_) => CreditEntryDialog(party: party, kind: CreditKind.payment),
+                                  ),
+                          child: const Text('Record payment'),
                         ),
-                        child: const Text('Record payment'),
                       ),
                     ),
                   ],
@@ -198,71 +241,8 @@ class _CustomerDebtsTable extends ConsumerWidget {
   }
 }
 
-class _SupplierCreditsTable extends ConsumerWidget {
-  const _SupplierCreditsTable({required this.suppliers});
-
-  final List<Supplier> suppliers;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final owing = suppliers.where((s) => s.balanceOwed > 0).toList()
-      ..sort((a, b) => b.balanceOwed.compareTo(a.balanceOwed));
-
-    if (owing.isEmpty) {
-      return const _EmptyState(message: "You don't owe any supplier anything right now.");
-    }
-
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: SingleChildScrollView(
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: DataTable(
-            columns: const [
-              DataColumn(label: Text('Supplier')),
-              DataColumn(label: Text('Contact person')),
-              DataColumn(label: Text('Balance owed'), numeric: true),
-              DataColumn(label: Text('')),
-            ],
-            rows: [
-              for (final supplier in owing)
-                DataRow(
-                  cells: [
-                    DataCell(Text(supplier.name)),
-                    DataCell(Text(supplier.contactPerson)),
-                    DataCell(
-                      StatusPill(
-                        label: currencyFormat.format(supplier.balanceOwed),
-                        tone: StatusTone.warning,
-                      ),
-                    ),
-                    DataCell(
-                      TextButton(
-                        onPressed: () => showDialog(
-                          context: context,
-                          builder: (_) => RecordPaymentDialog(
-                            title: 'Record payment to ${supplier.name}',
-                            currentBalance: supplier.balanceOwed,
-                            onSubmit: (amount) => ref
-                                .read(suppliersProvider.notifier)
-                                .recordPayment(supplier.id, amount),
-                          ),
-                        ),
-                        child: const Text('Record payment'),
-                      ),
-                    ),
-                  ],
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _EmptyState extends StatelessWidget {
-  const _EmptyState({required this.message});
+class _Message extends StatelessWidget {
+  const _Message(this.message);
 
   final String message;
 

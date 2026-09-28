@@ -119,7 +119,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     } catch (_) {
       setState(
         () => _errorMessage =
-            'Could not reach the Aimify server. Check your connection and try again.',
+            'Could not reach Aimify. Signing in needs a connection — once you are signed in, the app keeps working offline.',
       );
     } finally {
       if (mounted) setState(() => _isSubmitting = false);

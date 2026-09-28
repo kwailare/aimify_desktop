@@ -14,12 +14,14 @@ import 'package:aimify_desktop/features/customers/presentation/customers_screen.
 import 'package:aimify_desktop/features/expenses/presentation/expenses_screen.dart';
 import 'package:aimify_desktop/features/inventory/data/inventory_repository.dart';
 import 'package:aimify_desktop/features/inventory/domain/stock_movement.dart';
+import 'package:aimify_desktop/features/parties/domain/party.dart';
 import 'package:aimify_desktop/features/inventory/presentation/inventory_screen.dart';
 import 'package:aimify_desktop/features/products/presentation/products_screen.dart';
 import 'package:aimify_desktop/features/purchases/presentation/purchases_screen.dart';
 import 'package:aimify_desktop/features/reports/presentation/reports_screen.dart';
 import 'package:aimify_desktop/features/suppliers/presentation/suppliers_screen.dart';
 import 'package:aimify_desktop/features/warehouses/presentation/warehouses_screen.dart';
+import 'package:aimify_desktop/shared/utils/formatters.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -46,6 +48,11 @@ class _OwnerAuthController extends AuthController {
           'warehouses.manage',
           'stock.out',
           'stock.adjust',
+          'customers.read',
+          'customers.write',
+          'suppliers.read',
+          'suppliers.write',
+          'credit.record',
         ],
         plan: Plan(
           name: 'Full Access',
@@ -56,6 +63,11 @@ class _OwnerAuthController extends AuthController {
 }
 
 void main() {
+  // Tax on: the products table then shows a second "incl. VAT" line under
+  // every selling price, so the taller rows are covered by the sweep below.
+  setUpAll(() => updateLocaleFormatsFromOrg(taxRate: 7.5, taxName: 'VAT'));
+  tearDownAll(() => updateLocaleFormatsFromOrg(taxRate: 0));
+
   final screens = <String, Widget>{
     'Warehouses': const WarehousesScreen(),
     'Reports': const ReportsScreen(),
@@ -106,6 +118,17 @@ void main() {
     ),
   );
 
+  final parties = FakePartiesRepository(
+    customers: [
+      fixtureParty('c1', name: 'Blessing Retail Store and General Merchants Limited', balance: 45000, creditLimit: 50000),
+      fixtureParty('c2', name: 'Kingsway Provisions', balance: 0, creditLimit: 500000),
+    ],
+    suppliers: [
+      fixtureParty('s1', type: PartyType.supplier, name: 'Golden Grains Distributors', balance: 145000),
+      fixtureParty('s2', type: PartyType.supplier, name: 'Coastal Oils', balance: 0),
+    ],
+  );
+
   // 452 is 500 minus the page padding — the width that broke Products and
   // Inventory once their toolbars wrapped onto several lines.
   for (final entry in screens.entries) {
@@ -120,7 +143,7 @@ void main() {
           ProviderScope(
             overrides: [
               authControllerProvider.overrideWith(_OwnerAuthController.new),
-              ...fakeDataOverrides(products: products, inventory: inventory),
+              ...fakeDataOverrides(products: products, inventory: inventory, parties: parties),
             ],
             child: MaterialApp(theme: AppTheme.light(), home: entry.value),
           ),

@@ -72,8 +72,9 @@ allowed gets `403`:
 
 `/me` also returns `permissions`, the list the signed-in role holds, so the
 desktop app can hide or disable controls instead of waiting for a `403`.
-Reading (products, warehouses, categories, units, movements, alerts) is open
-to every role.
+Reading products, warehouses, categories, units, movements and alerts is open
+to every role. Customers, suppliers and the credit ledger hold money records,
+so they have their own read permissions.
 
 | Permission | Covers | Roles |
 |---|---|---|
@@ -83,8 +84,15 @@ to every role.
 | `warehouses.manage` | Create, edit and disable warehouses | Owner, Administrator, Warehouse Manager |
 | `stock.out` | Record a `stock_out` movement | The roles above plus Sales Staff |
 | `stock.adjust` | Record `stock_in`, `adjustment` and `count` movements | Owner, Administrator, Warehouse Manager, Inventory Staff |
+| `customers.read` | List and read customers and their credit ledger | Owner, Administrator, Sales Staff, Accountant / Finance |
+| `customers.write` | Add, edit and archive customers | Owner, Administrator, Sales Staff |
+| `suppliers.read` | List and read suppliers and their credit ledger | Owner, Administrator, Warehouse Manager, Accountant / Finance |
+| `suppliers.write` | Add, edit and archive suppliers | Owner, Administrator, Warehouse Manager |
+| `credit.record` | Record charges, payments and adjustments on a customer's or supplier's credit ledger | Owner, Administrator, Accountant / Finance |
 
-Accountant / Finance is read-only. The role rules live in
+Accountant / Finance can read customers and suppliers and record credit, but
+not change products, stock or the customer and supplier records themselves.
+Inventory Staff has none of the money permissions. The role rules live in
 `lib/permissions.ts` in `aimify-web`.
 
 ## Plan limits
@@ -539,12 +547,120 @@ The current picture for active products:
 }
 ```
 
+## Customers and suppliers
+
+Header required on all of these: `Authorization: Bearer <token>`. The two
+resources have the same shape, so they are described together; each has its
+own paths and permissions (`customers.read` / `customers.write`,
+`suppliers.read` / `suppliers.write`).
+
+- `GET /api/v1/customers` and `GET /api/v1/suppliers` return
+  `{ "customers": [...] }` / `{ "suppliers": [...] }`, sorted by name, archived
+  ones hidden unless you add `?includeArchived=true`. Every row carries
+  `balanceOwed` (see the credit ledger below).
+- `POST` creates one (`201`, `{ "customer": { ... } }` or `{ "supplier": { ... } }`).
+  Only `name` is required.
+- `GET /{id}` returns one, `PATCH /{id}` changes any of the fields, and
+  `DELETE /{id}` **archives** it (`status: "archived"`) rather than deleting,
+  because its credit history has to stay intact.
+
+Fields: `name` (max 200), `phone`, `email`, `address`, `notes` (optional text,
+`null` clears), plus `contactPerson` on suppliers only and `creditLimit` (a
+non-negative number, default `0`) on customers only. Sending a field the other
+resource owns is a `400`.
+
+```json
+{
+  "customer": {
+    "id": "uuid",
+    "organizationId": "uuid",
+    "name": "Blessing Retail Store",
+    "phone": "+234 706 555 0201",
+    "email": null,
+    "address": null,
+    "notes": null,
+    "creditLimit": 200000,
+    "status": "active",
+    "createdAt": "2026-09-27T09:00:00.000Z",
+    "updatedAt": "2026-09-27T09:00:00.000Z",
+    "balanceOwed": 45000
+  }
+}
+```
+
+Failures: `400` (bad input), `401`, `402`/`403` (subscription, or
+`forbidden_role`), `404` (unknown id, or another organization's).
+
+## Credit ledger
+
+One ledger for both sides of a wholesaler's credit: a customer's balance is
+what they owe you, a supplier's balance is what you owe them. A positive
+`balanceOwed` always means "still owed". A party's balance is the sum of its
+entries, so two people recording payments at once - or offline and synced
+later - never overwrite each other.
+
+### `GET /api/v1/credit-entries`
+
+Newest first, up to `?limit=` (default 100, max 200). Filter with
+`?partyType=customer|supplier` and `?partyId=<uuid>`. Without a `partyType` you
+get the ledgers your role may read (a Sales Staff member sees only the customer
+ledger); asking for a type you can't read is a `403`.
+
+### `POST /api/v1/credit-entries`
+
+Needs `credit.record`.
+
+```json
+{
+  "partyType": "customer",
+  "partyId": "uuid",
+  "kind": "payment",
+  "amount": 15000,
+  "note": "Part payment, cash",
+  "clientRef": "3f6c1a9e-optional-unique-id"
+}
+```
+
+- `kind` is `charge` (a sale on credit or a supplier invoice: raises the
+  balance), `payment` (lowers it) or `adjustment` (a signed correction).
+- `amount` is positive for `charge` and `payment`; the server applies the sign.
+  For `adjustment` it is signed and non-zero.
+- A payment larger than the balance owed is refused with `400` and
+  `"code": "overpayment"` (with the current `balanceOwed`).
+- **`clientRef`** makes a retry harmless. Send a unique value per entry; if a
+  request with the same `clientRef` already succeeded (for example an offline
+  change sent again after the answer was lost), you get `200` with the
+  existing entry and `"duplicate": true` instead of a second entry.
+
+`201` (or `200` for a duplicate):
+
+```json
+{
+  "entry": {
+    "id": "uuid",
+    "organizationId": "uuid",
+    "partyType": "customer",
+    "partyId": "uuid",
+    "kind": "payment",
+    "amount": -15000,
+    "note": "Part payment, cash",
+    "userId": "uuid",
+    "clientRef": "3f6c1a9e-optional-unique-id",
+    "createdAt": "2026-09-27T09:05:00.000Z"
+  },
+  "balanceOwed": 30000
+}
+```
+
+Entries are stored signed (`amount: -15000` for a payment). Archived parties
+keep their ledger and can still be paid off.
+
 ## What this API does *not* do yet
 
-- **No customers, suppliers, purchases, sales or expenses.** Products and
-  stock movements are the first slice; everything else builds on them.
-- **No supplier link on products.** It needs a suppliers table, which doesn't
-  exist in `aimify-web` yet.
+- **No purchases, sales or expenses.** Stock, customers, suppliers and the
+  credit ledger exist; these build on them.
+- **No supplier link on products yet.** The suppliers table now exists, so
+  this is possible; it hasn't been added to products.
 - **No per-warehouse stock balances.** `currentStock` is organization-wide on
   the product; movements record which warehouse they happened in, but stock
   isn't split by warehouse. This has to change before multiple warehouses are
@@ -573,9 +689,12 @@ All of this is implemented in the `aimify-web` repo:
   validation and rules behind the endpoints above
 - `app/api/v1/` — `auth/login`, `me`, `warehouses` (+ `[id]`), `products`
   (+ `[id]`), `categories` (+ `[id]`), `units` (+ `[id]`), `alerts/stock`,
-  `inventory/movements`
+  `inventory/movements`, `customers` (+ `[id]`), `suppliers` (+ `[id]`),
+  `credit-entries`
+- `lib/party-routes.ts`, `lib/party-input.ts`, `lib/credit.ts` — the shared
+  customer/supplier handlers, their validation, and the ledger arithmetic
 - `db/schema.ts` — `warehouses`, `products`, `stock_movements`,
-  `catalog_options` tables
+  `catalog_options`, `customers`, `suppliers`, `credit_entries` tables
 
 New endpoints get added under `app/api/v1/` and should start with
 `guardApi(request)`.

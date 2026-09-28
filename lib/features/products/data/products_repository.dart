@@ -3,8 +3,11 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/constants/api_constants.dart';
+import '../../../shared/offline/outbox.dart';
 import '../../../shared/services/authed_api.dart';
 import '../../auth/presentation/auth_controller.dart';
+import '../../inventory/data/outbox_overlay.dart';
+import '../../sync/sync_engine.dart';
 import '../domain/product.dart';
 
 /// REAL `/api/v1/products` — list, create, edit, archive, and the image
@@ -15,8 +18,16 @@ class ProductsRepository {
 
   final AuthedApi _api;
 
-  Future<List<Product>> list() async {
-    final json = await _api.get(ApiConstants.products);
+  /// The product list. Falls back to the last saved copy when the network
+  /// can't answer, so the screens still open offline.
+  Future<List<Product>> list() => _read(cacheKey: 'products');
+
+  /// The product list straight from the server — never the saved copy. Used
+  /// to check whether an interrupted create actually landed.
+  Future<List<Product>> listFresh() => _read();
+
+  Future<List<Product>> _read({String? cacheKey}) async {
+    final json = await _api.get(ApiConstants.products, cacheKey: cacheKey);
     return [
       for (final row in (json['products'] as List<dynamic>? ?? const []))
         Product.fromJson(row as Map<String, dynamic>),
@@ -73,23 +84,87 @@ class ProductsNotifier extends AsyncNotifier<List<Product>> {
     state = await AsyncValue.guard(ref.read(productsRepositoryProvider).list);
   }
 
-  Future<Product> add(ProductInput input) async {
-    final created = await ref.read(productsRepositoryProvider).create(input);
-    await refresh();
-    _refreshPlanUsage();
-    return created;
+  SyncEngine get _sync => ref.read(syncEngineProvider.notifier);
+
+  /// Creates a product — now if the connection is good, otherwise saved on
+  /// this computer and synced later (the product appears immediately, marked
+  /// pending).
+  Future<SubmitResult<Product>> add(ProductInput input) async {
+    final op = OutboxOp(
+      id: newOpId(),
+      kind: OpKind.productCreate,
+      payload: {'input': input.toJson()},
+      createdAt: DateTime.now(),
+    );
+    final result = await _sync.submit(op, () => ref.read(productsRepositoryProvider).create(input));
+    if (!result.queued) {
+      await refresh();
+      _refreshPlanUsage();
+    }
+    return result;
   }
 
-  Future<Product> edit(String id, ProductInput input) async {
-    final updated = await ref.read(productsRepositoryProvider).update(id, input);
-    await refresh();
-    return updated;
+  Future<SubmitResult<Product>> edit(String id, ProductInput input) async {
+    final outbox = ref.read(outboxProvider.notifier);
+
+    // A product that only exists locally: fold the edit into its pending
+    // create instead of queueing a second change.
+    if (id.startsWith('local:')) {
+      final create = ref
+          .read(outboxOpsProvider)
+          .where((o) => o.kind == OpKind.productCreate && o.localId == id)
+          .firstOrNull;
+      if (create != null) {
+        await outbox.replace(
+          OutboxOp(
+            id: create.id,
+            kind: create.kind,
+            payload: {'input': input.toJson()},
+            createdAt: create.createdAt,
+            attempted: create.attempted,
+            error: create.error,
+          ),
+        );
+      }
+      return const SubmitResult.queued();
+    }
+
+    final op = OutboxOp(
+      id: newOpId(),
+      kind: OpKind.productUpdate,
+      payload: {'id': id, 'input': input.toJson()},
+      createdAt: DateTime.now(),
+    );
+    final result = await _sync.submit(op, () => ref.read(productsRepositoryProvider).update(id, input));
+    if (!result.queued) await refresh();
+    return result;
   }
 
-  Future<void> archive(String id) async {
-    await ref.read(productsRepositoryProvider).archive(id);
-    await refresh();
-    _refreshPlanUsage();
+  Future<SubmitResult<Product>> archive(String id) async {
+    // Archiving a product that never reached the server just forgets it,
+    // together with any stock changes that were waiting on it.
+    if (id.startsWith('local:')) {
+      await ref.read(outboxProvider.notifier).removeWhere(
+            (o) =>
+                o.localId == id ||
+                o.payload['id'] == id ||
+                o.payload['productId'] == id,
+          );
+      return const SubmitResult.queued();
+    }
+
+    final op = OutboxOp(
+      id: newOpId(),
+      kind: OpKind.productArchive,
+      payload: {'id': id},
+      createdAt: DateTime.now(),
+    );
+    final result = await _sync.submit(op, () => ref.read(productsRepositoryProvider).archive(id));
+    if (!result.queued) {
+      await refresh();
+      _refreshPlanUsage();
+    }
+    return result;
   }
 
   /// Creating or archiving changes the plan's product usage, which lives on
@@ -114,6 +189,23 @@ final productsProvider =
 /// Products for anything that just needs the list — empty while loading or
 /// after a failure. Screens that show loading/error states watch
 /// [productsProvider] itself.
+///
+/// This is the server's list with every change still waiting to sync applied
+/// on top (see `outbox_overlay.dart`), so offline changes show at once.
 final productListProvider = Provider<List<Product>>(
-  (ref) => ref.watch(productsProvider).valueOrNull ?? const [],
+  (ref) => ref.watch(outboxViewProvider).products,
 );
+
+/// True when the plan's product cap is reached, counting products created
+/// (or archived) offline that the server's usage figure doesn't include yet.
+final productSlotsFullProvider = Provider<bool>((ref) {
+  final plan = ref.watch(authControllerProvider).valueOrNull?.plan;
+  final limit = plan?.limits.products;
+  if (plan == null || limit == null) return false;
+  final ops = ref.watch(outboxOpsProvider).where((o) => !o.failed);
+  final created = ops.where((o) => o.kind == OpKind.productCreate).length;
+  final archived = ops
+      .where((o) => o.kind == OpKind.productArchive && !(o.payload['id'] as String).startsWith('local:'))
+      .length;
+  return plan.usage.products + created - archived >= limit;
+});
