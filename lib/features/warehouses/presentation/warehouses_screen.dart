@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/widgets/async_state.dart';
+import '../../../shared/widgets/manage_billing_link.dart';
 import '../../../shared/widgets/section_header.dart';
 import '../../../shared/widgets/status_pill.dart';
 import '../../auth/domain/permissions.dart';
@@ -23,8 +24,10 @@ class WarehousesScreen extends ConsumerWidget {
     final state = ref.watch(warehousesProvider);
     final warehouses = ref.watch(warehouseListProvider);
     final canManage = hasPermission(ref, Permissions.warehousesManage);
-    final plan = ref.watch(authControllerProvider).valueOrNull?.plan;
+    final me = ref.watch(authControllerProvider).valueOrNull;
+    final plan = me?.plan;
     final atWarehouseCap = plan?.warehousesAtCap ?? false;
+    final isOwner = me?.role == 'Owner';
     final activeCount = warehouses.where((w) => w.isActive).length;
 
     var subtitle = '$activeCount active warehouse(s)';
@@ -42,6 +45,7 @@ class WarehousesScreen extends ConsumerWidget {
               title: 'Warehouses',
               subtitle: subtitle,
               actions: [
+                if (atWarehouseCap && isOwner) const ManageBillingLink(),
                 Tooltip(
                   message: !canManage
                       ? "Your role can't manage warehouses"

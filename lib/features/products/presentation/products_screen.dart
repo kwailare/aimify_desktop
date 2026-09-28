@@ -8,6 +8,7 @@ import '../../../shared/widgets/section_header.dart';
 import '../../../shared/widgets/stat_card.dart';
 import '../../../shared/widgets/status_pill.dart';
 import '../../../shared/widgets/stock_level_bar.dart';
+import '../../../shared/widgets/manage_billing_link.dart';
 import '../../../shared/widgets/toolbar_search_field.dart';
 import '../../auth/domain/permissions.dart';
 import '../../auth/presentation/auth_controller.dart';
@@ -61,8 +62,10 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
 
     final canWrite = hasPermission(ref, Permissions.productsWrite);
     final canArchive = hasPermission(ref, Permissions.productsArchive);
-    final plan = ref.watch(authControllerProvider).valueOrNull?.plan;
+    final me = ref.watch(authControllerProvider).valueOrNull;
+    final plan = me?.plan;
     final atProductCap = ref.watch(productSlotsFullProvider);
+    final isOwner = me?.role == 'Owner';
 
     var subtitle = '${all.length} active product(s)';
     if (plan?.limits.products != null) {
@@ -122,6 +125,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                   icon: const Icon(Icons.category_outlined, size: 18),
                   label: const Text('Categories & units'),
                 ),
+                if (atProductCap && isOwner) const ManageBillingLink(),
                 Tooltip(
                   message: !canWrite
                       ? "Your role can't add products"

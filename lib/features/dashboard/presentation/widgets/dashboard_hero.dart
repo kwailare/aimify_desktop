@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../shared/utils/formatters.dart';
+import '../../../../shared/widgets/manage_billing_link.dart';
 import '../../../auth/domain/auth_models.dart';
 
 /// The dashboard's opening band: a time-aware greeting plus the signed-in
@@ -96,6 +97,8 @@ class DashboardHero extends StatelessWidget {
                       role: me.role!,
                       subscriptionStatus: me.organization!.subscriptionStatus,
                       trialEndsAt: me.organization!.trialEndsAt,
+                      currentPeriodEnd: me.organization!.currentPeriodEnd,
+                      cancelAtPeriodEnd: me.organization!.cancelAtPeriodEnd,
                     )
                   : const _OnboardingChip();
 
@@ -135,6 +138,8 @@ class _OrgStatusPanel extends StatelessWidget {
     required this.role,
     required this.subscriptionStatus,
     required this.trialEndsAt,
+    required this.currentPeriodEnd,
+    required this.cancelAtPeriodEnd,
   });
 
   final String orgName;
@@ -142,6 +147,14 @@ class _OrgStatusPanel extends StatelessWidget {
   final String role;
   final String subscriptionStatus;
   final DateTime? trialEndsAt;
+
+  /// Set once the org has paid at least once — the date the current paid
+  /// period ends.
+  final DateTime? currentPeriodEnd;
+
+  /// The owner cancelled, but access continues normally until
+  /// [currentPeriodEnd] — purely informational, nothing to gate on this.
+  final bool cancelAtPeriodEnd;
 
   @override
   Widget build(BuildContext context) {
@@ -216,8 +229,31 @@ class _OrgStatusPanel extends StatelessWidget {
           if (isPastDue) ...[
             const SizedBox(height: 8),
             Text(
-              'Your last payment failed — update billing to avoid losing access.',
+              "A payment didn't go through — update it on the website.",
               style: theme.textTheme.bodySmall?.copyWith(color: warning, fontSize: 11),
+            ),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: ManageBillingLink(label: 'Update billing'),
+            ),
+          ],
+          // Once the org has paid at least once, the paid period matters more
+          // than the (now irrelevant) trial countdown — cancellation first,
+          // since it's the more actionable thing to notice. Skipped while
+          // past_due: `currentPeriodEnd` is the period that just failed to
+          // renew, so "Renews <date>" would show a date already in the past.
+          if (currentPeriodEnd != null && !isPastDue) ...[
+            SizedBox(height: cancelAtPeriodEnd ? 8 : 4),
+            Text(
+              cancelAtPeriodEnd
+                  ? 'Cancels ${dateFormat.format(currentPeriodEnd!)} — access continues until then.'
+                  : 'Renews ${dateFormat.format(currentPeriodEnd!)}',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: cancelAtPeriodEnd
+                    ? warning
+                    : theme.colorScheme.onSurface.withValues(alpha: 0.55),
+                fontSize: 11,
+              ),
             ),
           ],
           if (trialProgress != null && daysLeft != null) ...[

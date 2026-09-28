@@ -48,6 +48,8 @@ class Organization {
     this.taxRate = 0,
     this.timezone,
     this.dateFormat,
+    this.currentPeriodEnd,
+    this.cancelAtPeriodEnd = false,
   });
 
   final String id;
@@ -84,6 +86,16 @@ class Organization {
   /// turned into an `intl` pattern.
   final String? dateFormat;
 
+  /// Set once the organization has paid at least once (via Paystack on the
+  /// website) — the date the current paid period ends. `null` for an org
+  /// that has never paid (still on trial, or `pending`).
+  final DateTime? currentPeriodEnd;
+
+  /// True when the owner has cancelled but the paid period hasn't ended yet.
+  /// Access and [subscriptionStatus] stay completely normal until
+  /// [currentPeriodEnd] passes — this is purely informational until then.
+  final bool cancelAtPeriodEnd;
+
   factory Organization.fromJson(Map<String, dynamic> json) => Organization(
         id: json['id'] as String,
         name: json['name'] as String,
@@ -103,6 +115,10 @@ class Organization {
         taxRate: (json['taxRate'] as num?)?.toDouble() ?? 0,
         timezone: json['timezone'] as String?,
         dateFormat: json['dateFormat'] as String?,
+        currentPeriodEnd: json['currentPeriodEnd'] == null
+            ? null
+            : DateTime.tryParse(json['currentPeriodEnd'] as String),
+        cancelAtPeriodEnd: json['cancelAtPeriodEnd'] as bool? ?? false,
       );
 
   /// One of `pending`, `trial`, `active`, `past_due`, `expired`, `cancelled`,
