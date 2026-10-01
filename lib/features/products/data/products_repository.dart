@@ -26,12 +26,20 @@ class ProductsRepository {
   /// to check whether an interrupted create actually landed.
   Future<List<Product>> listFresh() => _read();
 
-  Future<List<Product>> _read({String? cacheKey}) async {
-    final json = await _api.get(ApiConstants.products, cacheKey: cacheKey);
-    return [
+  /// Archived products only — hidden from every other screen, but this is
+  /// what the Products screen's "Show archived" view reads so a product's
+  /// status stays visible even after it's archived.
+  Future<List<Product>> listArchived() =>
+      _read(cacheKey: 'products_archived', includeArchived: true);
+
+  Future<List<Product>> _read({String? cacheKey, bool includeArchived = false}) async {
+    final url = includeArchived ? '${ApiConstants.products}?includeArchived=true' : ApiConstants.products;
+    final json = await _api.get(url, cacheKey: cacheKey);
+    final rows = [
       for (final row in (json['products'] as List<dynamic>? ?? const []))
         Product.fromJson(row as Map<String, dynamic>),
     ];
+    return includeArchived ? rows.where((p) => p.isArchived).toList() : rows;
   }
 
   Future<Product> create(ProductInput input) async {
@@ -47,6 +55,13 @@ class ProductsRepository {
   Future<Product> archive(String id) async {
     final json = await _api.delete(ApiConstants.product(id));
     return Product.fromJson((json['product'] ?? json) as Map<String, dynamic>);
+  }
+
+  /// Brings an archived product back to `active`. Needs a connection — it
+  /// isn't queued offline, the same as every other catalog-admin action.
+  Future<Product> restore(String id) async {
+    final json = await _api.patch(ApiConstants.product(id), {'status': 'active'});
+    return Product.fromJson(json['product'] as Map<String, dynamic>);
   }
 
   /// PNG, JPEG or WebP up to 2 MB; the server checks the file's contents,
@@ -162,9 +177,20 @@ class ProductsNotifier extends AsyncNotifier<List<Product>> {
     final result = await _sync.submit(op, () => ref.read(productsRepositoryProvider).archive(id));
     if (!result.queued) {
       await refresh();
+      ref.invalidate(archivedProductsProvider);
       _refreshPlanUsage();
     }
     return result;
+  }
+
+  /// Brings an archived product back to `active`. Online-only, like every
+  /// other catalog-admin action — see [WarehousesNotifier.edit] for the same
+  /// pattern on warehouses.
+  Future<Product> restore(String id) async {
+    final product = await ref.read(productsRepositoryProvider).restore(id);
+    await Future.wait([refresh(), ref.read(archivedProductsProvider.notifier).refresh()]);
+    _refreshPlanUsage();
+    return product;
   }
 
   /// Creating or archiving changes the plan's product usage, which lives on
@@ -185,6 +211,26 @@ class ProductsNotifier extends AsyncNotifier<List<Product>> {
 
 final productsProvider =
     AsyncNotifierProvider<ProductsNotifier, List<Product>>(ProductsNotifier.new);
+
+/// Archived products — not watched by anything else in the app (inventory,
+/// reports, the dashboard and stock-movement pickers all stay active-only).
+/// Loaded only when the Products screen's "Show archived" toggle is on, so a
+/// product's full status, active or archived, is visible somewhere without
+/// slowing down or cluttering every other screen.
+class ArchivedProductsNotifier extends AsyncNotifier<List<Product>> {
+  @override
+  Future<List<Product>> build() async {
+    if (ref.watch(sessionUserIdProvider) == null) return const [];
+    return ref.watch(productsRepositoryProvider).listArchived();
+  }
+
+  Future<void> refresh() async {
+    state = await AsyncValue.guard(ref.read(productsRepositoryProvider).listArchived);
+  }
+}
+
+final archivedProductsProvider =
+    AsyncNotifierProvider<ArchivedProductsNotifier, List<Product>>(ArchivedProductsNotifier.new);
 
 /// Products for anything that just needs the list — empty while loading or
 /// after a failure. Screens that show loading/error states watch
