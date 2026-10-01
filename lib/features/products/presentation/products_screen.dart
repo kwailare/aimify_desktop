@@ -16,6 +16,7 @@ import '../../auth/presentation/permissions_provider.dart';
 import '../data/products_repository.dart';
 import '../domain/product.dart';
 import 'product_form_dialog.dart';
+import 'widgets/bulk_import_dialog.dart';
 import 'widgets/catalog_manager_dialog.dart';
 
 enum _SortField { name, category, purchasePrice, sellingPrice, stock }
@@ -36,6 +37,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
   String? _categoryFilter;
   _SortField _sortField = _SortField.name;
   bool _sortAscending = true;
+  bool _showArchived = false;
 
   @override
   void dispose() {
@@ -67,10 +69,17 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
     final atProductCap = ref.watch(productSlotsFullProvider);
     final isOwner = me?.role == 'Owner';
 
+    // Archived products are loaded only once the toggle is on — every other
+    // screen (inventory, reports, the dashboard, stock-movement pickers)
+    // stays active-only, so this doesn't add a request to the common path.
+    final archivedState = _showArchived ? ref.watch(archivedProductsProvider) : null;
+    final archived = archivedState?.valueOrNull ?? const <Product>[];
+
     var subtitle = '${all.length} active product(s)';
     if (plan?.limits.products != null) {
       subtitle += ' · plan: ${plan!.usage.products}/${plan.limits.products} products used';
     }
+    if (_showArchived) subtitle += ' · ${archived.length} archived';
 
     final categories = <String>{
       for (final p in all)
@@ -104,6 +113,19 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
 
     entries = entries..sort(compare);
 
+    // Archived rows match the search box but not the category chips — the
+    // point of showing them is to find a specific product's status, not to
+    // browse a category, and an archived product's category may no longer
+    // be one any active product uses.
+    final archivedEntries = archived.where((p) {
+      if (query.isEmpty) return true;
+      return p.name.toLowerCase().contains(query) ||
+          p.sku.toLowerCase().contains(query) ||
+          (p.brand?.toLowerCase().contains(query) ?? false) ||
+          (p.barcode?.toLowerCase().contains(query) ?? false);
+    }).toList()
+      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+
     final stockValue = all.fold(0.0, (sum, p) => sum + p.stockValueAtCost);
     final attentionCount = all.where((p) => p.isLowStock || p.isOutOfStock).length;
 
@@ -126,6 +148,26 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                   label: const Text('Categories & units'),
                 ),
                 if (atProductCap && isOwner) const ManageBillingLink(),
+                Tooltip(
+                  message: !canWrite
+                      ? "Your role can't add products"
+                      : atProductCap
+                          ? 'Your plan has reached its product limit — archive one to free a slot'
+                          : '',
+                  child: OutlinedButton.icon(
+                    onPressed: (!canWrite || atProductCap)
+                        ? null
+                        : () async {
+                            final imported = await showDialog<bool>(
+                              context: context,
+                              builder: (_) => const BulkImportDialog(),
+                            );
+                            if (imported == true) ref.invalidate(archivedProductsProvider);
+                          },
+                    icon: const Icon(Icons.upload_file_outlined, size: 18),
+                    label: const Text('Bulk import'),
+                  ),
+                ),
                 Tooltip(
                   message: !canWrite
                       ? "Your role can't add products"
@@ -201,8 +243,30 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                     selected: _categoryFilter == category,
                     onTap: () => setState(() => _categoryFilter = category),
                   ),
+                const SizedBox(width: 4),
+                FilterChip(
+                  label: const Text('Show archived'),
+                  avatar: const Icon(Icons.inventory_outlined, size: 16),
+                  selected: _showArchived,
+                  onSelected: (value) => setState(() => _showArchived = value),
+                ),
               ],
             ),
+            if (_showArchived && archivedState != null && archivedState.isLoading && !archivedState.hasValue) ...[
+              const SizedBox(height: 10),
+              Text(
+                'Loading archived products…',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.55),
+                ),
+              ),
+            ] else if (_showArchived && archivedState != null && archivedState.hasError && !archivedState.hasValue) ...[
+              const SizedBox(height: 10),
+              Text(
+                "Archived products couldn't be loaded.",
+                style: TextStyle(color: theme.colorScheme.error),
+              ),
+            ],
             const SizedBox(height: 16),
             if (productsState.isLoading && !productsState.hasValue)
               const LoadingPanel(label: 'Loading products…')
@@ -211,7 +275,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                 error: productsState.error!,
                 onRetry: () => ref.read(productsProvider.notifier).refresh(),
               )
-            else if (entries.isEmpty)
+            else if (entries.isEmpty && archivedEntries.isEmpty)
               _EmptyState(
                 hasFilters: _search.isNotEmpty || _categoryFilter != null,
                 canAdd: canWrite && !atProductCap,
@@ -279,7 +343,10 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                     rows: [
                       for (var i = 0; i < entries.length; i++)
                         _buildRow(context, entries[i], i, theme,
-                            canWrite: canWrite, canArchive: canArchive),
+                            canWrite: canWrite, canArchive: canArchive, archived: false),
+                      for (var i = 0; i < archivedEntries.length; i++)
+                        _buildRow(context, archivedEntries[i], entries.length + i, theme,
+                            canWrite: canWrite, canArchive: canArchive, archived: true),
                     ],
                   ),
                 ),
@@ -297,6 +364,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
     ThemeData theme, {
     required bool canWrite,
     required bool canArchive,
+    required bool archived,
   }) {
     final reference = product.maxStock ??
         [product.minStock * 3, product.currentStock, 1].reduce((a, b) => a > b ? a : b);
@@ -343,38 +411,54 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
           ),
         ),
         DataCell(
-          product.isPending
-              ? const StatusPill(label: 'Pending sync', tone: StatusTone.neutral)
-              : product.isOutOfStock
-              ? const StatusPill(label: 'Out of stock', tone: StatusTone.negative)
-              : product.isLowStock
-                  ? const StatusPill(label: 'Low stock', tone: StatusTone.warning)
-                  : const StatusPill(label: 'In stock', tone: StatusTone.positive),
+          archived
+              ? const StatusPill(label: 'Archived', tone: StatusTone.neutral)
+              : product.isPending
+                  ? const StatusPill(label: 'Pending sync', tone: StatusTone.neutral)
+                  : product.isOutOfStock
+                      ? const StatusPill(label: 'Out of stock', tone: StatusTone.negative)
+                      : product.isLowStock
+                          ? const StatusPill(label: 'Low stock', tone: StatusTone.warning)
+                          : const StatusPill(label: 'In stock', tone: StatusTone.positive),
         ),
         DataCell(
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              IconButton(
-                tooltip: canWrite ? 'Edit' : "Your role can't edit products",
-                icon: const Icon(Icons.edit_outlined, size: 18),
-                onPressed: !canWrite
-                    ? null
-                    : () => showDialog(
-                          context: context,
-                          builder: (_) => ProductFormDialog(product: product),
-                        ),
-              ),
-              IconButton(
-                tooltip: canArchive ? 'Archive' : "Your role can't archive products",
-                icon: const Icon(Icons.archive_outlined, size: 18),
-                onPressed: !canArchive ? null : () => _confirmArchive(context, product),
-              ),
-            ],
-          ),
+          archived
+              ? TextButton.icon(
+                  onPressed: !canWrite ? null : () => _restore(context, product),
+                  icon: const Icon(Icons.unarchive_outlined, size: 16),
+                  label: const Text('Restore'),
+                )
+              : Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      tooltip: canWrite ? 'Edit' : "Your role can't edit products",
+                      icon: const Icon(Icons.edit_outlined, size: 18),
+                      onPressed: !canWrite
+                          ? null
+                          : () => showDialog(
+                                context: context,
+                                builder: (_) => ProductFormDialog(product: product),
+                              ),
+                    ),
+                    IconButton(
+                      tooltip: canArchive ? 'Archive' : "Your role can't archive products",
+                      icon: const Icon(Icons.archive_outlined, size: 18),
+                      onPressed: !canArchive ? null : () => _confirmArchive(context, product),
+                    ),
+                  ],
+                ),
         ),
       ],
     );
+  }
+
+  Future<void> _restore(BuildContext context, Product product) async {
+    try {
+      await ref.read(productsProvider.notifier).restore(product.id);
+    } catch (e) {
+      if (context.mounted) showErrorSnack(context, e);
+    }
   }
 
   void _confirmArchive(BuildContext context, Product product) {

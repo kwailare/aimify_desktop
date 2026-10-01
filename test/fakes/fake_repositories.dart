@@ -44,13 +44,18 @@ Warehouse fixtureWarehouse(String id, {String? name, bool active = true}) => War
     );
 
 class FakeProductsRepository implements ProductsRepository {
-  FakeProductsRepository(this.products);
+  FakeProductsRepository(this.products, {List<Product>? archivedProducts})
+      : archivedProducts = archivedProducts ?? [];
 
   List<Product> products;
+  List<Product> archivedProducts;
 
   /// Every product created through this fake, in order (for asserting what
   /// the sync engine sent).
   final List<ProductInput> created = [];
+
+  /// Thrown by [create] when set — a duplicate SKU or a plan-limit refusal.
+  Object? createError;
 
   @override
   Future<List<Product>> list() async => List.of(products);
@@ -59,9 +64,15 @@ class FakeProductsRepository implements ProductsRepository {
   Future<List<Product>> listFresh() async => List.of(products);
 
   @override
+  Future<List<Product>> listArchived() async => List.of(archivedProducts);
+
+  @override
   Future<Product> create(ProductInput input) async {
+    final error = createError;
+    if (error != null) throw error;
     this.created.add(input);
-    final created = fixtureProduct('srv${this.created.length}', name: input.name, stock: 0);
+    final created =
+        fixtureProduct('srv${this.created.length}', name: input.name, stock: 0).withInput(input);
     products = [...products, created];
     return created;
   }
@@ -73,7 +84,16 @@ class FakeProductsRepository implements ProductsRepository {
   Future<Product> archive(String id) async {
     final archived = products.firstWhere((p) => p.id == id);
     products = products.where((p) => p.id != id).toList();
+    archivedProducts = [...archivedProducts, archived];
     return archived;
+  }
+
+  @override
+  Future<Product> restore(String id) async {
+    final restored = archivedProducts.firstWhere((p) => p.id == id);
+    archivedProducts = archivedProducts.where((p) => p.id != id).toList();
+    products = [...products, restored];
+    return restored;
   }
 
   @override

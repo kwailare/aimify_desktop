@@ -56,8 +56,12 @@ dependencies:
   # Charts for the Reports screen
   fl_chart: ^0.69.2
 
-  # Native "choose a file" dialog for picking a product picture
+  # Native "choose a file" dialog for picking a product picture, and for
+  # bulk-import's "pick a spreadsheet" / "save a template" dialogs
   file_picker: ^8.1.6
+
+  # Reads and writes .xlsx workbooks for bulk-importing products
+  excel: ^4.0.6
 
   # Opens the website's billing page from the subscription-locked screen
   url_launcher: ^6.3.1
