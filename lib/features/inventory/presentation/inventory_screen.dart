@@ -14,6 +14,7 @@ import '../../auth/presentation/permissions_provider.dart';
 import '../../products/data/products_repository.dart';
 import '../../products/domain/product.dart';
 import '../../warehouses/data/warehouses_repository.dart';
+import '../../warehouses/domain/warehouse.dart';
 import '../data/inventory_repository.dart';
 import '../domain/stock_movement.dart';
 import 'stock_movement_dialog.dart';
@@ -57,6 +58,9 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
   _TypeFilter _typeFilter = _TypeFilter.all;
   bool _sortNewestFirst = true;
 
+  /// The warehouse the screen is narrowed to, or `null` for all of them.
+  String? _warehouseFilter;
+
   @override
   void dispose() {
     _searchController.dispose();
@@ -66,7 +70,10 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
   void _record({String? productId}) {
     showDialog(
       context: context,
-      builder: (_) => StockMovementDialog(initialProductId: productId),
+      builder: (_) => StockMovementDialog(
+        initialProductId: productId,
+        initialWarehouseId: _warehouseFilter,
+      ),
     );
   }
 
@@ -96,14 +103,21 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
     final productById = {for (final p in products) p.id: p};
     final warehouseName = {for (final w in warehouses) w.id: w.name};
     final showWarehouse = warehouses.length > 1;
+    if (_warehouseFilter != null && !warehouses.any((w) => w.id == _warehouseFilter)) {
+      _warehouseFilter = null;
+    }
+    final filter = _warehouseFilter;
+    int held(Product p) => filter == null ? p.currentStock : p.stockIn(filter);
+    final scopedMovements =
+        filter == null ? movements : movements.where((m) => m.warehouseId == filter).toList();
 
-    final stockInTotal = movements
+    final stockInTotal = scopedMovements
         .where((m) => m.quantity > 0)
         .fold(0, (sum, m) => sum + m.quantity);
-    final stockOutTotal = movements
+    final stockOutTotal = scopedMovements
         .where((m) => m.quantity < 0)
         .fold(0, (sum, m) => sum + m.quantity.abs());
-    final unitsOnHand = products.fold(0, (sum, p) => sum + p.currentStock);
+    final unitsOnHand = products.fold(0, (sum, p) => sum + held(p));
 
     final query = _search.toLowerCase();
 
@@ -147,20 +161,22 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
                 0 => StatCard(
                     label: 'Units on hand',
                     value: '$unitsOnHand',
-                    caption: 'Across ${products.length} product(s)',
+                    caption: filter == null
+                        ? 'Across ${products.length} product(s)'
+                        : 'In ${warehouseName[filter]}',
                     icon: Icons.inventory_2_outlined,
                   ),
                 1 => StatCard(
                     label: 'Received',
                     value: '$stockInTotal',
-                    caption: 'Units in, latest ${movements.length} movements',
+                    caption: 'Units in, latest ${scopedMovements.length} movements',
                     icon: Icons.arrow_downward_rounded,
                     accentColor: const Color(0xFF2F8F5B),
                   ),
                 2 => StatCard(
                     label: 'Dispatched',
                     value: '$stockOutTotal',
-                    caption: 'Units out, latest ${movements.length} movements',
+                    caption: 'Units out, latest ${scopedMovements.length} movements',
                     icon: Icons.arrow_upward_rounded,
                     accentColor: theme.colorScheme.error,
                   ),
@@ -192,6 +208,31 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
                   selected: {_view},
                   onSelectionChanged: (s) => setState(() => _view = s.first),
                 ),
+                if (showWarehouse)
+                  SizedBox(
+                    width: 220,
+                    child: DropdownButtonFormField<String?>(
+                      key: const Key('inventory-warehouse-filter'),
+                      initialValue: _warehouseFilter,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        isDense: true,
+                        prefixIcon: Icon(Icons.warehouse_outlined, size: 18),
+                      ),
+                      items: [
+                        const DropdownMenuItem<String?>(value: null, child: Text('All warehouses')),
+                        for (final w in warehouses)
+                          DropdownMenuItem<String?>(
+                            value: w.id,
+                            child: Text(
+                              w.isActive ? w.name : '${w.name} (disabled)',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                      ],
+                      onChanged: (value) => setState(() => _warehouseFilter = value),
+                    ),
+                  ),
                 ToolbarSearchField(
                   controller: _searchController,
                   hintText: _view == _View.levels
@@ -219,11 +260,11 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
             ),
             const SizedBox(height: 16),
             if (_view == _View.levels)
-              _buildLevels(theme, products, productsState, query, canRecordAnything)
+              _buildLevels(theme, products, productsState, query, canRecordAnything, warehouses)
             else
               _buildHistory(
                 theme,
-                movements,
+                scopedMovements,
                 movementsState,
                 productById,
                 warehouseName,
@@ -243,7 +284,18 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
     AsyncValue<List<Product>> state,
     String query,
     bool canRecord,
+    List<Warehouse> warehouses,
   ) {
+    final filter = _warehouseFilter;
+    int held(Product p) => filter == null ? p.currentStock : p.stockIn(filter);
+    final names = {for (final w in warehouses) w.id: w.name};
+    String breakdown(Product p) => p.stockByWarehouse.isEmpty
+        ? 'No stock in any warehouse'
+        : [
+            for (final entry in p.stockByWarehouse.entries)
+              '${names[entry.key] ?? 'Disabled warehouse'}: ${entry.value}',
+          ].join('\n');
+
     if (state.isLoading && !state.hasValue) return const LoadingPanel(label: 'Loading stock…');
     if (state.hasError && !state.hasValue) {
       return ErrorRetryCard(
@@ -281,14 +333,17 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
           headingRowColor: WidgetStateProperty.all(
             theme.colorScheme.onSurface.withValues(alpha: 0.03),
           ),
-          columns: const [
-            DataColumn(label: Text('Product')),
-            DataColumn(label: Text('SKU')),
-            DataColumn(label: Text('On hand'), numeric: true),
-            DataColumn(label: Text('Reorder level'), numeric: true),
-            DataColumn(label: Text('Value at cost'), numeric: true),
-            DataColumn(label: Text('Status')),
-            DataColumn(label: Text('')),
+          columns: [
+            const DataColumn(label: Text('Product')),
+            const DataColumn(label: Text('SKU')),
+            DataColumn(
+              label: Text(filter == null ? 'On hand' : 'On hand · ${names[filter] ?? ''}'),
+              numeric: true,
+            ),
+            const DataColumn(label: Text('Reorder level'), numeric: true),
+            const DataColumn(label: Text('Value at cost'), numeric: true),
+            const DataColumn(label: Text('Status')),
+            const DataColumn(label: Text('')),
           ],
           rows: [
             for (var i = 0; i < rows.length; i++)
@@ -308,16 +363,19 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
                   ),
                   DataCell(Text(rows[i].sku)),
                   DataCell(
-                    StockLevelBar(
-                      quantity: rows[i].currentStock,
-                      referenceMax: rows[i].maxStock ??
-                          [rows[i].minStock * 3, rows[i].currentStock, 1]
-                              .reduce((a, b) => a > b ? a : b),
-                      isLow: rows[i].isLowStock || rows[i].isOutOfStock,
+                    Tooltip(
+                      message: filter == null && warehouses.length > 1 ? breakdown(rows[i]) : '',
+                      child: StockLevelBar(
+                        quantity: held(rows[i]),
+                        referenceMax: rows[i].maxStock ??
+                            [rows[i].minStock * 3, held(rows[i]), 1]
+                                .reduce((a, b) => a > b ? a : b),
+                        isLow: rows[i].isLowStock || rows[i].isOutOfStock,
+                      ),
                     ),
                   ),
                   DataCell(Text(rows[i].minStock == 0 ? '—' : '${rows[i].minStock}')),
-                  DataCell(Text(currencyFormat.format(rows[i].stockValueAtCost))),
+                  DataCell(Text(currencyFormat.format(held(rows[i]) * rows[i].purchasePrice))),
                   DataCell(
                     rows[i].isOutOfStock
                         ? const StatusPill(label: 'Out of stock', tone: StatusTone.negative)

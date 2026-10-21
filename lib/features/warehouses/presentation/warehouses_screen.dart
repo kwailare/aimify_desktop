@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../shared/utils/formatters.dart';
 import '../../../shared/widgets/async_state.dart';
 import '../../../shared/widgets/manage_billing_link.dart';
 import '../../../shared/widgets/section_header.dart';
@@ -94,7 +95,7 @@ class WarehousesScreen extends ConsumerWidget {
                 physics: const NeverScrollableScrollPhysics(),
                 gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
                   maxCrossAxisExtent: 420,
-                  mainAxisExtent: 244,
+                  mainAxisExtent: 272,
                   mainAxisSpacing: 16,
                   crossAxisSpacing: 16,
                 ),
@@ -211,6 +212,17 @@ class _WarehouseCard extends ConsumerWidget {
               detail(Icons.place_outlined, warehouse.address, 'No address'),
               detail(Icons.person_outline, warehouse.managerName, 'No manager'),
               detail(Icons.phone_outlined, warehouse.phone, 'No phone'),
+              const SizedBox(height: 8),
+              Text(
+                warehouse.stock.isEmpty
+                    ? 'No stock here'
+                    : '${warehouse.stock.units} units · ${warehouse.stock.products} '
+                        'product${warehouse.stock.products == 1 ? '' : 's'} · '
+                        '${currencyFormat.format(warehouse.stock.valueAtCost)} at cost',
+                key: Key('warehouse-stock-${warehouse.id}'),
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600),
+              ),
               const Spacer(),
               Wrap(
                 alignment: WrapAlignment.end,
@@ -226,10 +238,18 @@ class _WarehouseCard extends ConsumerWidget {
                     label: const Text('Edit'),
                   ),
                   if (warehouse.isActive)
-                    TextButton.icon(
-                      onPressed: !canDisable ? null : () => _confirmDisable(context, ref),
-                      icon: const Icon(Icons.pause_circle_outline, size: 16),
-                      label: const Text('Disable'),
+                    Tooltip(
+                      message: warehouse.stock.isEmpty
+                          ? ''
+                          : 'This warehouse still holds stock. Empty it with stock out or an '
+                              'adjustment before disabling it.',
+                      child: TextButton.icon(
+                        onPressed: (!canDisable || !warehouse.stock.isEmpty)
+                            ? null
+                            : () => _confirmDisable(context, ref),
+                        icon: const Icon(Icons.pause_circle_outline, size: 16),
+                        label: const Text('Disable'),
+                      ),
                     )
                   else
                     Tooltip(

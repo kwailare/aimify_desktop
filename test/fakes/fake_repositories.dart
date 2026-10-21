@@ -23,6 +23,7 @@ Product fixtureProduct(
   String category = 'Grains',
   double cost = 100,
   double price = 150,
+  String warehouseId = 'w1',
 }) =>
     Product(
       id: id,
@@ -34,6 +35,9 @@ Product fixtureProduct(
       sellingPrice: price,
       minStock: min,
       currentStock: stock,
+      // Like the server: the stock sits in a warehouse (the default fixture
+      // warehouse unless told otherwise).
+      stockByWarehouse: stock == 0 ? const {} : {warehouseId: stock},
       status: 'active',
     );
 

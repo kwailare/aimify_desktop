@@ -22,9 +22,13 @@ import '../domain/stock_movement.dart';
 /// stock out, `stock.adjust` for the rest) — Sales Staff only ever see
 /// "Stock out".
 class StockMovementDialog extends ConsumerStatefulWidget {
-  const StockMovementDialog({super.key, this.initialProductId});
+  const StockMovementDialog({super.key, this.initialProductId, this.initialWarehouseId});
 
   final String? initialProductId;
+
+  /// Pre-selects this warehouse (e.g. the one the Inventory screen is
+  /// filtered to) when it is active.
+  final String? initialWarehouseId;
 
   @override
   ConsumerState<StockMovementDialog> createState() => _StockMovementDialogState();
@@ -52,7 +56,9 @@ class _StockMovementDialogState extends ConsumerState<StockMovementDialog> {
     final allowed = allowedMovementTypes(permissions);
     _type = allowed.isEmpty ? null : allowed.first;
     final active = ref.read(activeWarehousesProvider);
-    _warehouseId = active.isEmpty ? null : active.first.id;
+    _warehouseId = active.any((w) => w.id == widget.initialWarehouseId)
+        ? widget.initialWarehouseId
+        : (active.isEmpty ? null : active.first.id);
   }
 
   @override
@@ -69,6 +75,13 @@ class _StockMovementDialogState extends ConsumerState<StockMovementDialog> {
     return null;
   }
 
+  /// What [product] holds in the chosen warehouse — stock is per warehouse,
+  /// so counts and stock outs are checked against this, not the total.
+  int _held(Product product) {
+    final warehouseId = _warehouseId;
+    return warehouseId == null ? product.currentStock : product.stockIn(warehouseId);
+  }
+
   /// The signed change to send, or `null` if the input doesn't describe one.
   int? _delta(Product product) {
     final entered = int.tryParse(_quantity.text.trim());
@@ -77,7 +90,7 @@ class _StockMovementDialogState extends ConsumerState<StockMovementDialog> {
     return signedMovementDelta(
       type: type,
       entered: entered,
-      currentStock: product.currentStock,
+      currentStock: _held(product),
       adjustDown: _adjustDown,
     );
   }
@@ -112,11 +125,14 @@ class _StockMovementDialogState extends ConsumerState<StockMovementDialog> {
       final result = outcome.value;
       final note = outcome.queued
           ? '${type.label} saved on this computer — ${product.name} now shows '
-              '${product.currentStock + delta}. It will sync when the connection is good.'
+              '${_held(product) + delta} in that warehouse. It will sync when the connection is good.'
           : switch (result!.alert) {
               'out_of_stock' => '${product.name} is now out of stock.',
-              'low_stock' => '${product.name} is running low (${result.currentStock} left).',
-              _ => '${type.label} recorded — ${product.name} now has ${result.currentStock}.',
+              'low_stock' => '${product.name} is running low (${result.currentStock} left in total).',
+              _ => result.warehouseStock != null && result.warehouseStock != result.currentStock
+                  ? '${type.label} recorded — ${product.name} now has ${result.warehouseStock} '
+                      'there, ${result.currentStock} in total.'
+                  : '${type.label} recorded — ${product.name} now has ${result.currentStock}.',
             };
       messenger
         ..hideCurrentSnackBar()
@@ -164,7 +180,13 @@ class _StockMovementDialogState extends ConsumerState<StockMovementDialog> {
 
     final products = ref.watch(productListProvider);
     final warehouses = ref.watch(activeWarehousesProvider);
-    if (_warehouseId == null && warehouses.isNotEmpty) _warehouseId = warehouses.first.id;
+    if (_warehouseId == null && warehouses.isNotEmpty) {
+      // The list may arrive after the dialog opened; honour the requested
+      // warehouse then too.
+      _warehouseId = warehouses.any((w) => w.id == widget.initialWarehouseId)
+          ? widget.initialWarehouseId
+          : warehouses.first.id;
+    }
     if (_productId != null && products.isNotEmpty && !products.any((p) => p.id == _productId)) {
       _productId = null;
     }
@@ -197,11 +219,12 @@ class _StockMovementDialogState extends ConsumerState<StockMovementDialog> {
     if (product != null && entered != null) {
       final delta = _delta(product);
       if (delta != null) {
-        final after = product.currentStock + delta;
+        final held = _held(product);
+        final after = held + delta;
         preview = _type == StockMovementType.count
-            ? 'System shows ${product.currentStock}; counted $entered → '
+            ? 'This warehouse shows $held; counted $entered → '
                 '${delta == 0 ? 'no difference' : '${delta > 0 ? '+' : ''}$delta'}'
-            : 'Stock will go from ${product.currentStock} to $after';
+            : 'Stock in this warehouse will go from $held to $after';
       }
     }
 
@@ -243,8 +266,12 @@ class _StockMovementDialogState extends ConsumerState<StockMovementDialog> {
                     for (final p in products)
                       DropdownMenuItem(
                         value: p.id,
-                        child: Text('${p.name} · ${p.currentStock} ${p.unit}',
-                            overflow: TextOverflow.ellipsis),
+                        child: Text(
+                          warehouses.length > 1
+                              ? '${p.name} · ${_held(p)} ${p.unit} here'
+                              : '${p.name} · ${p.currentStock} ${p.unit}',
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                   ],
                   onChanged: (value) => setState(() => _productId = value),
@@ -290,7 +317,7 @@ class _StockMovementDialogState extends ConsumerState<StockMovementDialog> {
                     if (parsed == null) return 'Enter a whole number';
                     if (_type == StockMovementType.count) {
                       if (parsed < 0) return "Can't be negative";
-                      if (product != null && parsed == product.currentStock) {
+                      if (product != null && parsed == _held(product)) {
                         return 'That matches the system figure — nothing to record';
                       }
                       return null;
@@ -299,8 +326,10 @@ class _StockMovementDialogState extends ConsumerState<StockMovementDialog> {
                     if (product != null &&
                         (_type == StockMovementType.stockOut ||
                             (_type == StockMovementType.adjustment && _adjustDown)) &&
-                        parsed > product.currentStock) {
-                      return 'Only ${product.currentStock} in stock';
+                        parsed > _held(product)) {
+                      return warehouses.length > 1
+                          ? 'Only ${_held(product)} in this warehouse'
+                          : 'Only ${_held(product)} in stock';
                     }
                     return null;
                   },

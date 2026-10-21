@@ -1,8 +1,8 @@
 /// A product exactly as `/api/v1/products` returns it.
 ///
-/// [currentStock] is organization-wide and only ever changes through a
-/// stock movement — the API refuses to set it directly, so it is read-only
-/// here too. (Per-warehouse balances don't exist on the backend yet.)
+/// Stock is held per warehouse ([stockByWarehouse]); [currentStock] is the
+/// total across warehouses. Both only ever change through a stock movement —
+/// the API refuses to set them directly, so they are read-only here too.
 class Product {
   const Product({
     required this.id,
@@ -21,6 +21,7 @@ class Product {
     required this.currentStock,
     required this.status,
     this.supplierId,
+    this.stockByWarehouse = const {},
     this.isPending = false,
   });
 
@@ -51,6 +52,13 @@ class Product {
   /// The usual supplier, or `null`. Its name comes from
   /// `supplierOptionsProvider`, which doesn't need `suppliers.view`.
   final String? supplierId;
+
+  /// Warehouse id to the quantity held there; warehouses holding nothing are
+  /// absent.
+  final Map<String, int> stockByWarehouse;
+
+  /// How many are in [warehouseId].
+  int stockIn(String warehouseId) => stockByWarehouse[warehouseId] ?? 0;
 
   /// True for a product created while offline that hasn't reached the
   /// server yet — it exists only on this computer for now.
@@ -84,28 +92,42 @@ class Product {
         currentStock: currentStock,
         status: status,
         supplierId: input.supplierId,
+        stockByWarehouse: stockByWarehouse,
         isPending: pending ?? isPending,
       );
 
-  Product withStock(int stock) => Product(
-        id: id,
-        sku: sku,
-        barcode: barcode,
-        name: name,
-        description: description,
-        brand: brand,
-        imageUrl: imageUrl,
-        category: category,
-        unit: unit,
-        purchasePrice: purchasePrice,
-        sellingPrice: sellingPrice,
-        minStock: minStock,
-        maxStock: maxStock,
-        currentStock: stock,
-        status: status,
-        supplierId: supplierId,
-        isPending: isPending,
-      );
+  /// This product after [quantity] (a signed delta) moves in [warehouseId]:
+  /// that warehouse's balance and the total change together, like on the
+  /// server.
+  Product withMovement(String warehouseId, int quantity) {
+    final balances = {...stockByWarehouse};
+    final next = stockIn(warehouseId) + quantity;
+    if (next == 0) {
+      balances.remove(warehouseId);
+    } else {
+      balances[warehouseId] = next;
+    }
+    return Product(
+      id: id,
+      sku: sku,
+      barcode: barcode,
+      name: name,
+      description: description,
+      brand: brand,
+      imageUrl: imageUrl,
+      category: category,
+      unit: unit,
+      purchasePrice: purchasePrice,
+      sellingPrice: sellingPrice,
+      minStock: minStock,
+      maxStock: maxStock,
+      currentStock: currentStock + quantity,
+      status: status,
+      supplierId: supplierId,
+      stockByWarehouse: balances,
+      isPending: isPending,
+    );
+  }
 
   factory Product.fromJson(Map<String, dynamic> json) => Product(
         id: json['id'] as String,
@@ -124,6 +146,10 @@ class Product {
         currentStock: (json['currentStock'] as num?)?.toInt() ?? 0,
         status: json['status'] as String? ?? 'active',
         supplierId: json['supplierId'] as String?,
+        stockByWarehouse: {
+          for (final row in (json['stockByWarehouse'] as List<dynamic>? ?? const []))
+            (row as Map<String, dynamic>)['warehouseId'] as String: (row['quantity'] as num).toInt(),
+        },
       );
 }
 

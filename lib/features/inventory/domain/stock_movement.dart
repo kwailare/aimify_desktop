@@ -103,10 +103,20 @@ class StockMovement {
 /// What recording a movement returns: the ledger row, the product's new
 /// stock, and — only when this movement crossed a threshold — an alert.
 class MovementResult {
-  const MovementResult({required this.movement, required this.currentStock, this.alert});
+  const MovementResult({
+    required this.movement,
+    required this.currentStock,
+    this.warehouseStock,
+    this.alert,
+  });
 
   final StockMovement movement;
+
+  /// The product's total across warehouses after the movement.
   final int currentStock;
+
+  /// The warehouse's balance after the movement.
+  final int? warehouseStock;
 
   /// `low_stock`, `out_of_stock`, or `null`.
   final String? alert;
@@ -114,6 +124,7 @@ class MovementResult {
   factory MovementResult.fromJson(Map<String, dynamic> json) => MovementResult(
         movement: StockMovement.fromJson(json['movement'] as Map<String, dynamic>),
         currentStock: (json['currentStock'] as num?)?.toInt() ?? 0,
+        warehouseStock: (json['warehouseStock'] as num?)?.toInt(),
         alert: json['alert'] as String?,
       );
 }

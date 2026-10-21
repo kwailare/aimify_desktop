@@ -94,7 +94,7 @@ void main() {
       expect(input.toJson()['supplierId'], 's1');
       expect(ProductInput.fromJson(input.toJson()).supplierId, 's1', reason: 'offline queue keeps it');
       expect(input.toLocalProduct('local:1').supplierId, 's1');
-      expect(product.withStock(9).supplierId, 's1');
+      expect(product.withMovement('w1', 9).supplierId, 's1');
     });
 
     test('an unlinked edit sends supplierId: null so the server clears it', () {

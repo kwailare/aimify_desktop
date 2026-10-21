@@ -7,6 +7,7 @@ import '../../../shared/services/authed_api.dart';
 import '../../auth/domain/permissions.dart';
 import '../../auth/presentation/auth_controller.dart';
 import '../../products/data/products_repository.dart';
+import '../../warehouses/data/warehouses_repository.dart';
 import '../../products/domain/product.dart';
 import '../../sync/sync_engine.dart';
 import '../domain/stock_movement.dart';
@@ -134,6 +135,8 @@ class MovementsNotifier extends AsyncNotifier<List<StockMovement>> {
         refresh(),
         ref.read(productsProvider.notifier).refresh(),
         ref.read(stockAlertsProvider.notifier).refresh(),
+        // Each warehouse card shows what it holds.
+        ref.read(warehousesProvider.notifier).refresh(),
       ]);
     }
     return result;

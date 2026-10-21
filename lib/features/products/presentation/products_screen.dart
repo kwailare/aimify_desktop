@@ -14,6 +14,7 @@ import '../../auth/domain/permissions.dart';
 import '../../auth/presentation/auth_controller.dart';
 import '../../auth/presentation/permissions_provider.dart';
 import '../../parties/data/supplier_options.dart';
+import '../../warehouses/data/warehouses_repository.dart';
 import '../data/products_repository.dart';
 import '../domain/product.dart';
 import 'product_form_dialog.dart';
@@ -359,6 +360,18 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
     );
   }
 
+  /// Where the stock is, when there's more than one warehouse to tell apart.
+  String _stockBreakdown(Product product) {
+    final warehouses = ref.read(warehouseListProvider);
+    if (warehouses.length < 2) return '';
+    if (product.stockByWarehouse.isEmpty) return 'No stock in any warehouse';
+    final names = {for (final w in warehouses) w.id: w.name};
+    return [
+      for (final entry in product.stockByWarehouse.entries)
+        '${names[entry.key] ?? 'Disabled warehouse'}: ${entry.value}',
+    ].join('\n');
+  }
+
   DataRow _buildRow(
     BuildContext context,
     Product product,
@@ -406,10 +419,13 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
               : Text(currencyFormat.format(product.sellingPrice)),
         ),
         DataCell(
-          StockLevelBar(
-            quantity: product.currentStock,
-            referenceMax: reference,
-            isLow: product.isLowStock || product.isOutOfStock,
+          Tooltip(
+            message: _stockBreakdown(product),
+            child: StockLevelBar(
+              quantity: product.currentStock,
+              referenceMax: reference,
+              isLow: product.isLowStock || product.isOutOfStock,
+            ),
           ),
         ),
         DataCell(

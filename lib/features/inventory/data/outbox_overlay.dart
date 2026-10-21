@@ -54,15 +54,18 @@ OutboxView overlayOutbox(List<Product> base, List<OutboxOp> ops) {
         break;
       case OpKind.movement:
         final productId = op.payload['productId'] as String;
+        final warehouseId = op.payload['warehouseId'] as String;
         final i = indexOf(productId);
         final quantity = (op.payload['quantity'] as num).toInt();
-        final previous = i >= 0 ? products[i].currentStock : 0;
-        if (i >= 0) products[i] = products[i].withStock(previous + quantity);
+        // Like on the server, a movement's before/after is that warehouse's
+        // balance.
+        final previous = i >= 0 ? products[i].stockIn(warehouseId) : 0;
+        if (i >= 0) products[i] = products[i].withMovement(warehouseId, quantity);
         movements.add(
           StockMovement(
             id: 'pending:${op.id}',
             productId: productId,
-            warehouseId: op.payload['warehouseId'] as String,
+            warehouseId: warehouseId,
             type: StockMovementTypeX.fromApi(op.payload['type'] as String),
             quantity: quantity,
             reason: op.payload['reason'] as String?,

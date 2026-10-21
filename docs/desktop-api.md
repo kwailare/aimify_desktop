@@ -366,13 +366,23 @@ ones (`status: "inactive"`).
       "managerName": null,
       "phone": null,
       "status": "active",
-      "createdAt": "2026-09-22T19:00:00.000Z"
+      "createdAt": "2026-09-22T19:00:00.000Z",
+      "stock": { "units": 340, "products": 12, "valueAtCost": 1520000, "valueAtRetail": 1810000 }
     }
   ]
 }
 ```
 
+`stock` is what the warehouse holds now: total units, how many products have a
+non-zero balance there, and their value at purchase and selling price.
+
 You need an **active** `warehouseId` from this list to record a stock movement.
+
+A warehouse can only be **disabled while it's empty**. `PATCH` with
+`"status": "inactive"` on one that still holds stock is refused with `409`
+and `"code": "warehouse_not_empty"` (plus `units` and `products`); the
+message lists what's left. Empty it with stock out or an adjustment first
+(stock transfers between warehouses come later).
 
 ### `POST /api/v1/warehouses`
 
@@ -448,6 +458,7 @@ Only `sku` and `name` are required; `unit` defaults to `"piece"`, prices and
     "minStock": 5,
     "maxStock": 200,
     "currentStock": 0,
+    "stockByWarehouse": [],
     "status": "active",
     "supplierId": "uuid",
     "createdAt": "2026-09-22T19:21:17.660Z",
@@ -469,7 +480,10 @@ archived supplier are refused. Supplier names for display come from
 doesn't need `suppliers.view`.
 
 `currentStock` always starts at `0` and only ever changes through the
-movements endpoint below.
+movements endpoint below. It is the total across warehouses;
+`stockByWarehouse` lists each warehouse holding a non-zero balance, e.g.
+`[{ "warehouseId": "uuid", "quantity": 60 }, { "warehouseId": "uuid", "quantity": 40 }]`.
+Every endpoint that returns products includes it.
 
 ### `GET /api/v1/products/{id}`
 
@@ -540,13 +554,18 @@ work.
 ## Stock movements
 
 Header required: `Authorization: Bearer <token>`. This is the *only* way
-`currentStock` on a product ever changes, so every stock change has a
-matching movement record.
+stock ever changes, so every stock change has a matching movement record.
+
+Stock is held **per warehouse**: each product has a balance in each
+warehouse (`stockByWarehouse` on the product), and `currentStock` is the
+total across all warehouses. A movement changes one warehouse's balance and
+the total together, in a single database statement, so the two always agree.
 
 ### `GET /api/v1/inventory/movements`
 
 The most recent 100 movements for the organization, newest first. Add
-`?productId=<uuid>` for one product's history.
+`?productId=<uuid>` for one product's history and/or `?warehouseId=<uuid>`
+for one warehouse's.
 
 ### `POST /api/v1/inventory/movements`
 
@@ -562,10 +581,15 @@ The most recent 100 movements for the organization, newest first. Add
 
 - `type` must be one of `stock_in`, `stock_out`, `adjustment`, `count`.
 - `quantity` is a **signed whole-number delta**: positive adds stock, negative
-  removes it (send `-30` to remove 30). It's applied as one atomic database
-  update (`current_stock = current_stock + quantity`), so concurrent requests
-  can't overwrite each other. 25 simultaneous requests were tested against one
-  product with zero lost updates.
+  removes it (send `-30` to remove 30). It's applied atomically to the
+  warehouse's balance and the total, so concurrent requests can't overwrite
+  each other.
+- A `stock_out` can't take that warehouse below zero: it's refused with
+  `409` and `"code": "insufficient_stock"`, plus `available` (what the
+  warehouse holds). The check runs against the locked current balance, so
+  12 simultaneous one-unit stock outs against 10 units give exactly 10
+  successes. `adjustment` and `count` may still go below zero, to correct
+  records. For a `count`, compute the delta from the *warehouse's* balance.
 - `warehouseId` must be an **active** warehouse of your organization; another
   organization's warehouse, or a disabled one, is a `404`.
 
@@ -587,19 +611,26 @@ The most recent 100 movements for the organization, newest first. Add
     "createdAt": "2026-09-22T19:21:37.865Z"
   },
   "currentStock": 100,
+  "warehouseStock": 100,
   "alert": null
 }
 ```
 
-`alert` is `"low_stock"` when this movement takes the product from above its
+`previousStock`/`newStock` and `warehouseStock` are that warehouse's balance;
+`currentStock` is the product's total across warehouses.
+
+`alert` is based on the product's **total** across warehouses: `"low_stock"`
+when this movement takes the total from above its
 `minStock` to at or below it, `"out_of_stock"` when it takes stock from
 positive to zero or less, and `null` otherwise. It fires on the *crossing*,
 not on every movement while stock stays low. The same event emails the
-organization's members. The desktop app can use `alert` to show a message
-straight away.
+organization's members, listing how much each warehouse holds when there's
+more than one. The desktop app can use `alert` to show a message straight
+away.
 
 Failures: `400` (invalid type, ids or quantity), `401`, `402`/`403`
-(subscription), `404` (product or warehouse not found).
+(subscription or role), `404` (product or warehouse not found), `409`
+(`insufficient_stock`).
 
 ## Stock alerts
 
@@ -613,6 +644,8 @@ The current picture for active products:
   "outOfStock": [ { "...": "products with currentStock <= 0" } ]
 }
 ```
+
+Each product includes `stockByWarehouse`.
 
 ## Customers and suppliers
 
@@ -832,10 +865,8 @@ website's Team page.
 
 - **No purchases, sales or expenses.** Stock, customers, suppliers and the
   credit ledger exist; these build on them.
-- **No per-warehouse stock balances.** `currentStock` is organization-wide on
-  the product; movements record which warehouse they happened in, but stock
-  isn't split by warehouse. This has to change before multiple warehouses are
-  offered.
+- **No stock transfers between warehouses yet.** Moving stock means a stock
+  out in one warehouse and a stock in to the other.
 - **Plan limits are configured by the Aimify team.** The default plan allows
   one active warehouse and is otherwise unlimited; see "Plan limits" above.
 
