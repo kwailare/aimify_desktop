@@ -44,13 +44,21 @@ class ApiConstants {
   static const String movements = '$_v1/inventory/movements';
   static const String stockAlerts = '$_v1/alerts/stock';
 
+  static const String team = '$_v1/team';
+  static const String teamInvitations = '$_v1/team/invitations';
+  static const String organizationSetup = '$_v1/organization/setup';
+
   /// Where "manage your subscription" links in the locked-account screen
   /// point — confirmed against the aimify-web source
   /// (`app/dashboard/billing/page.tsx`, `lib/site.ts`), not guessed.
   static const String billingUrl = '$baseUrl/dashboard/billing';
 
-  /// The website's Team page, where owners and administrators invite people
-  /// and change roles (`app/dashboard/team`). The desktop app has no team
-  /// screen of its own.
+  /// The website's Team page, where owners and administrators change roles,
+  /// remove members and revoke invitations (`app/dashboard/team`). Inviting
+  /// can also be done in the app's guided setup.
   static const String teamUrl = '$baseUrl/dashboard/team';
+
+  /// The website's Organization page, where the company profile is edited
+  /// (`app/dashboard/organization`).
+  static const String organizationUrl = '$baseUrl/dashboard/organization';
 }

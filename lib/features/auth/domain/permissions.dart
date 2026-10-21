@@ -38,4 +38,10 @@ class Permissions {
 
   /// Record a charge, payment or adjustment on a credit ledger.
   static const creditRecord = 'credit.record';
+
+  /// List the team and invite people (Owner, Administrator).
+  static const teamManage = 'team.manage';
+
+  /// Run the guided setup and mark it finished (Owner, Administrator).
+  static const setupComplete = 'setup.complete';
 }

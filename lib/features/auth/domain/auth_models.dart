@@ -50,6 +50,7 @@ class Organization {
     this.dateFormat,
     this.currentPeriodEnd,
     this.cancelAtPeriodEnd = false,
+    this.setupCompletedAt,
   });
 
   final String id;
@@ -96,6 +97,13 @@ class Organization {
   /// [currentPeriodEnd] passes — this is purely informational until then.
   final bool cancelAtPeriodEnd;
 
+  /// When an Owner or Administrator finished the guided setup, or `null` if
+  /// nobody has yet. Shared by the whole organization, so finishing on one
+  /// computer stops the wizard opening on every other.
+  final DateTime? setupCompletedAt;
+
+  bool get isSetupComplete => setupCompletedAt != null;
+
   factory Organization.fromJson(Map<String, dynamic> json) => Organization(
         id: json['id'] as String,
         name: json['name'] as String,
@@ -119,6 +127,9 @@ class Organization {
             ? null
             : DateTime.tryParse(json['currentPeriodEnd'] as String),
         cancelAtPeriodEnd: json['cancelAtPeriodEnd'] as bool? ?? false,
+        setupCompletedAt: json['setupCompletedAt'] == null
+            ? null
+            : DateTime.tryParse(json['setupCompletedAt'] as String),
       );
 
   /// One of `pending`, `trial`, `active`, `past_due`, `expired`, `cancelled`,

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../features/auth/domain/permissions.dart';
 import '../../features/auth/domain/screen_visibility.dart';
 import '../../features/auth/presentation/auth_controller.dart';
 import '../../features/auth/presentation/login_screen.dart';
@@ -14,6 +15,8 @@ import '../../features/inventory/presentation/inventory_screen.dart';
 import '../../features/products/presentation/products_screen.dart';
 import '../../features/purchases/presentation/purchases_screen.dart';
 import '../../features/reports/presentation/reports_screen.dart';
+import '../../features/setup_wizard/data/setup_wizard_state.dart';
+import '../../features/setup_wizard/presentation/setup_wizard_screen.dart';
 import '../../features/subscription/presentation/subscription_locked_screen.dart';
 import '../../features/suppliers/presentation/suppliers_screen.dart';
 import '../../features/warehouses/presentation/warehouses_screen.dart';
@@ -83,6 +86,17 @@ String? _redirect(BuildContext context, GoRouterState state) {
     return location == '/locked' ? null : '/locked';
   }
 
+  // A new organization's Owner or Administrator lands in the guided setup
+  // until they finish it or choose "Finish later" (see setup_wizard_state).
+  final autoOpenSetup = shouldAutoOpenSetup(
+    me,
+    dismissed: container.read(setupWizardDismissedProvider),
+  );
+  if (location == '/setup') {
+    return me.hasPermission(Permissions.setupComplete) ? null : '/';
+  }
+  if (autoOpenSetup) return '/setup';
+
   if (location == '/login' || location == '/splash' || location == '/locked') return '/';
 
   // A role that can't see this screen at all — a stale deep link, or the
@@ -117,6 +131,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/locked',
         pageBuilder: (context, state) =>
             _fadeThroughPage(const SubscriptionLockedScreen(), state),
+      ),
+      GoRoute(
+        path: '/setup',
+        pageBuilder: (context, state) => _fadeThroughPage(const SetupWizardScreen(), state),
       ),
       StatefulShellRoute.indexedStack(
         builder: (context, state, navigationShell) =>

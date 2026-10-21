@@ -4,15 +4,18 @@ import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../core/constants/api_constants.dart';
+import '../../../auth/domain/permissions.dart';
 import '../../../auth/presentation/auth_controller.dart';
 import '../../../inventory/data/inventory_repository.dart';
 import '../../../products/data/products_repository.dart';
+import '../../../setup_wizard/data/setup_wizard_state.dart';
 import '../../../warehouses/data/warehouses_repository.dart';
 
-/// The desktop half of the setup wizard. The website covers the company
+/// The desktop half of setup, in summary. The website covers the company
 /// profile, organization, trial and download; the products, opening
 /// inventory and team steps belong here. Each step ticks itself off from
-/// real data, and the whole card disappears once setup is complete.
+/// real data, and the whole card disappears once setup is complete. Owners
+/// and Administrators can reopen the guided setup from here.
 class SetupChecklistCard extends ConsumerWidget {
   const SetupChecklistCard({super.key});
 
@@ -30,8 +33,16 @@ class SetupChecklistCard extends ConsumerWidget {
     final hasWarehouse = warehouses.value!.any((w) => w.isActive);
     final hasProduct = products.value!.isNotEmpty;
     final hasStock = movements.value!.isNotEmpty || products.value!.any((p) => p.currentStock > 0);
-    final teamSize = ref.watch(authControllerProvider).valueOrNull?.plan?.usage.users ?? 1;
+    final me = ref.watch(authControllerProvider).valueOrNull;
+    final teamSize = me?.plan?.usage.users ?? 1;
     final hasTeam = teamSize > 1;
+    final canRunSetup = (me?.hasPermission(Permissions.setupComplete) ?? false) &&
+        !(me?.organization?.isSetupComplete ?? false);
+
+    void openSetup([SetupStep? step]) {
+      if (step != null) ref.read(setupWizardStepProvider.notifier).go(step);
+      context.go('/setup');
+    }
 
     final steps = [
       _Step(
@@ -57,10 +68,14 @@ class SetupChecklistCard extends ConsumerWidget {
       ),
       _Step(
         title: 'Invite your team',
-        detail: 'Owners and administrators invite people on the Aimify website.',
+        detail: canRunSetup
+            ? 'Send invitations from the guided setup.'
+            : 'Owners and administrators invite people.',
         done: hasTeam,
-        actionLabel: 'Open Team page',
-        onAction: () => launchUrl(Uri.parse(ApiConstants.teamUrl)),
+        actionLabel: canRunSetup ? 'Invite people' : 'Open Team page',
+        onAction: canRunSetup
+            ? () => openSetup(SetupStep.team)
+            : () => launchUrl(Uri.parse(ApiConstants.teamUrl)),
       ),
     ];
 
@@ -91,6 +106,15 @@ class SetupChecklistCard extends ConsumerWidget {
                 ),
               ),
               Text('$doneCount of ${steps.length} done', style: theme.textTheme.bodySmall),
+              if (canRunSetup) ...[
+                const SizedBox(width: 12),
+                FilledButton.tonalIcon(
+                  key: const Key('open-guided-setup'),
+                  onPressed: openSetup,
+                  icon: const Icon(Icons.assistant_navigation, size: 16),
+                  label: const Text('Open guided setup'),
+                ),
+              ],
             ],
           ),
           const SizedBox(height: 10),

@@ -89,6 +89,8 @@ so they have their own read permissions.
 | `suppliers.read` | List and read suppliers and their credit ledger | Owner, Administrator, Warehouse Manager, Accountant / Finance |
 | `suppliers.write` | Add, edit and archive suppliers | Owner, Administrator, Warehouse Manager |
 | `credit.record` | Record charges, payments and adjustments on a customer's or supplier's credit ledger | Owner, Administrator, Accountant / Finance |
+| `team.manage` | List the team and invite people | Owner, Administrator |
+| `setup.complete` | Mark the guided setup as finished | Owner, Administrator |
 
 Accountant / Finance can read customers and suppliers and record credit, but
 not change products, stock or the customer and supplier records themselves.
@@ -251,7 +253,8 @@ Success — `200`:
     "subscriptionStatus": "trial",
     "trialEndsAt": "2026-09-26T00:00:00.000Z",
     "currentPeriodEnd": null,
-    "cancelAtPeriodEnd": false
+    "cancelAtPeriodEnd": false,
+    "setupCompletedAt": null
   },
   "role": "Owner",
   "permissions": [
@@ -282,6 +285,12 @@ or on printed receipts).
 fills them in on the website; `taxRate` defaults to `0`. `timezone` and
 `dateFormat` are the organization's preferences and are meant to be used for
 displaying dates in the desktop app.
+
+`setupCompletedAt` is `null` until an Owner or Administrator finishes the
+guided setup (see "Guided setup" below), then the time they did. It is
+shared by the whole organization, so finishing on one computer stops the
+wizard opening on every other. Organizations that already had products
+when this field was added were marked as set up.
 
 If the signed-in user hasn't created an organization yet, `organization` and
 `role` come back as `null`. The desktop client should treat that as "send them
@@ -609,9 +618,12 @@ Failures: `400` (bad input), `401`, `402`/`403` (subscription, or
 
 One ledger for both sides of a wholesaler's credit: a customer's balance is
 what they owe you, a supplier's balance is what you owe them. A positive
-`balanceOwed` always means "still owed". A party's balance is the sum of its
-entries, so two people recording payments at once - or offline and synced
-later - never overwrite each other.
+`balanceOwed` always means "still owed". Every entry you post is kept
+(nothing is ever overwritten), and the party's `balanceOwed` is moved by one
+atomic update per entry - so two people recording payments on the same party
+at once, or offline changes synced later, can never both be accepted past
+what's actually owed. The `overpayment` check below is enforced by that same
+atomic update, not a separate read, so it holds even under real concurrency.
 
 ### `GET /api/v1/credit-entries`
 
@@ -669,6 +681,96 @@ Needs `credit.record`.
 Entries are stored signed (`amount: -15000` for a payment). Archived parties
 keep their ledger and can still be paid off.
 
+## Guided setup
+
+The desktop app walks a new organization's Owner or Administrator through
+warehouse, products, opening stock, team and subscription. Each step uses
+the endpoints in this document (opening stock is a `stock_in` movement with
+the reason `Opening stock`). When they finish, the app calls:
+
+### `POST /api/v1/organization/setup`
+
+Needs `setup.complete`. No body. Sets `setupCompletedAt` and returns it:
+
+```json
+{ "setupCompletedAt": "2026-10-21T09:12:44.120Z" }
+```
+
+Calling it again is harmless: it returns the original time and doesn't
+change it. The first call is recorded in the activity trail.
+
+## Team
+
+### `GET /api/v1/team`
+
+Needs `team.manage`. Returns the members, pending invitations, the roles the
+caller may invite, and seat use (`limit` is `null` when the plan has no cap;
+`used` counts members plus pending invitations, which is what the plan limit
+checks):
+
+```json
+{
+  "members": [
+    {
+      "id": "uuid",
+      "name": "Ada Obi",
+      "email": "ada@obi.example",
+      "role": "Owner",
+      "joinedAt": "2026-09-20T10:00:00.000Z"
+    }
+  ],
+  "invitations": [
+    {
+      "id": "uuid",
+      "email": "tunde@obi.example",
+      "role": "Sales Staff",
+      "expiresAt": "2026-10-28T09:00:00.000Z",
+      "createdAt": "2026-10-21T09:00:00.000Z",
+      "invitedByName": "Ada Obi"
+    }
+  ],
+  "assignableRoles": ["Owner", "Administrator", "Warehouse Manager", "Sales Staff", "Inventory Staff", "Accountant / Finance"],
+  "seats": { "limit": 5, "used": 2 }
+}
+```
+
+An Administrator's `assignableRoles` leaves out Owner and Administrator.
+
+### `POST /api/v1/team/invitations`
+
+Needs `team.manage`, and the caller's email must be confirmed. Body:
+
+```json
+{ "email": "tunde@obi.example", "role": "Sales Staff" }
+```
+
+Emails a 7-day invitation link, exactly like the website's Team page. Success
+— `201`:
+
+```json
+{
+  "invitation": { "id": "uuid", "email": "tunde@obi.example", "role": "Sales Staff" },
+  "emailSent": true
+}
+```
+
+If `emailSent` is `false` the invitation was saved but the email didn't go
+out; it can be resent from the website's Team page.
+
+| Status | `code` | Meaning |
+|---|---|---|
+| 400 | `invalid_request` | `email` or `role` missing |
+| 400 | `invalid_email` | Not a valid email address |
+| 403 | `email_unverified` | The caller hasn't confirmed their own email |
+| 403 | `role_not_assignable` | Unknown role, or one the caller can't give (Administrators can't invite Owners or Administrators) |
+| 403 | `plan_limit` | The plan's team size is reached (members plus pending invitations) |
+| 409 | `too_many_pending` | 25 invitations are already pending |
+| 409 | `already_in_organization` | That person already belongs to an organization on Aimify |
+| 429 | `rate_limited` | More than 20 invitations in the last hour |
+
+Changing roles, removing members and revoking invitations stay on the
+website's Team page.
+
 ## What this API does *not* do yet
 
 - **No purchases, sales or expenses.** Stock, customers, suppliers and the
@@ -681,8 +783,6 @@ keep their ledger and can still be paid off.
   offered.
 - **Plan limits are configured by the Aimify team.** The default plan allows
   one active warehouse and is otherwise unlimited; see "Plan limits" above.
-- **No online payments.** Subscription status changes to `active` are done by
-  the Aimify team for now.
 
 ## Where this lives, if it needs to change
 
