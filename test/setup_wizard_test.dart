@@ -20,6 +20,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'fakes/fake_permissions.dart';
 import 'fakes/fake_repositories.dart';
 import 'fakes/fake_token_storage.dart';
 
@@ -48,7 +49,7 @@ MeResponse _me({
         setupCompletedAt: setupCompletedAt,
       ),
       role: role,
-      permissions: permissions,
+      permissions: asGranted(permissions),
       plan: const Plan(
         name: 'Starter',
         limits: PlanLimits(users: 5, warehouses: 1),
@@ -84,7 +85,7 @@ class _FakeSetupRepository implements SetupRepository {
     final me = auth().current;
     auth().current = _me(
       role: me.role!,
-      permissions: me.permissions,
+      permissions: asGranted(me.permissions),
       setupCompletedAt: DateTime(2026, 10, 21),
     );
   }
@@ -203,7 +204,7 @@ void main() {
       expect(shouldAutoOpenSetup(_me(), dismissed: true), isFalse, reason: 'Finish later');
       expect(shouldAutoOpenSetup(_me(setupCompletedAt: DateTime(2026)), dismissed: false), isFalse);
       expect(
-        shouldAutoOpenSetup(_me(role: 'Sales Staff', permissions: const ['stock.out']), dismissed: false),
+        shouldAutoOpenSetup(_me(role: 'Sales Staff', permissions: asGranted(['stock.out'])), dismissed: false),
         isFalse,
       );
       expect(shouldAutoOpenSetup(_me(status: 'expired'), dismissed: false), isFalse);
@@ -228,7 +229,7 @@ void main() {
     testWidgets('Sales Staff never sees it, even on an unfinished org', (tester) async {
       await _bootApp(
         tester,
-        _Harness(me: _me(role: 'Sales Staff', permissions: const ['stock.out', 'customers.read'])),
+        _Harness(me: _me(role: 'Sales Staff', permissions: asGranted(['stock.out', 'customers.read']))),
       );
       expect(find.byType(SetupWizardScreen), findsNothing);
       expect(find.byKey(const Key('open-guided-setup')), findsNothing);

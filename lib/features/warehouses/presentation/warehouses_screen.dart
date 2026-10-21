@@ -23,7 +23,9 @@ class WarehousesScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(warehousesProvider);
     final warehouses = ref.watch(warehouseListProvider);
-    final canManage = hasPermission(ref, Permissions.warehousesManage);
+    final canCreate = hasPermission(ref, Permissions.warehousesCreate);
+    final canEdit = hasPermission(ref, Permissions.warehousesEdit);
+    final canDisable = hasPermission(ref, Permissions.warehousesDisable);
     final me = ref.watch(authControllerProvider).valueOrNull;
     final plan = me?.plan;
     final atWarehouseCap = plan?.warehousesAtCap ?? false;
@@ -47,13 +49,13 @@ class WarehousesScreen extends ConsumerWidget {
               actions: [
                 if (atWarehouseCap && isOwner) const ManageBillingLink(),
                 Tooltip(
-                  message: !canManage
-                      ? "Your role can't manage warehouses"
+                  message: !canCreate
+                      ? "Your role can't add warehouses"
                       : atWarehouseCap
                           ? 'Your plan has reached its warehouse limit — disable one to free a slot'
                           : '',
                   child: ElevatedButton.icon(
-                    onPressed: (!canManage || atWarehouseCap)
+                    onPressed: (!canCreate || atWarehouseCap)
                         ? null
                         : () => showDialog(
                               context: context,
@@ -79,7 +81,7 @@ class WarehousesScreen extends ConsumerWidget {
                   padding: const EdgeInsets.all(32),
                   child: Center(
                     child: Text(
-                      canManage
+                      canCreate
                           ? 'No warehouses yet. Add one to start recording stock.'
                           : 'No warehouses yet. Ask an owner or administrator to add one.',
                     ),
@@ -99,7 +101,8 @@ class WarehousesScreen extends ConsumerWidget {
                 itemCount: warehouses.length,
                 itemBuilder: (context, index) => _WarehouseCard(
                   warehouse: warehouses[index],
-                  canManage: canManage,
+                  canEdit: canEdit,
+                  canDisable: canDisable,
                   atCap: atWarehouseCap,
                 ),
               ),
@@ -111,10 +114,16 @@ class WarehousesScreen extends ConsumerWidget {
 }
 
 class _WarehouseCard extends ConsumerWidget {
-  const _WarehouseCard({required this.warehouse, required this.canManage, required this.atCap});
+  const _WarehouseCard({
+    required this.warehouse,
+    required this.canEdit,
+    required this.canDisable,
+    required this.atCap,
+  });
 
   final Warehouse warehouse;
-  final bool canManage;
+  final bool canEdit;
+  final bool canDisable;
   final bool atCap;
 
   Future<void> _setActive(BuildContext context, WidgetRef ref, bool active) async {
@@ -207,7 +216,7 @@ class _WarehouseCard extends ConsumerWidget {
                 alignment: WrapAlignment.end,
                 children: [
                   TextButton.icon(
-                    onPressed: !canManage
+                    onPressed: !canEdit
                         ? null
                         : () => showDialog(
                               context: context,
@@ -218,7 +227,7 @@ class _WarehouseCard extends ConsumerWidget {
                   ),
                   if (warehouse.isActive)
                     TextButton.icon(
-                      onPressed: !canManage ? null : () => _confirmDisable(context, ref),
+                      onPressed: !canDisable ? null : () => _confirmDisable(context, ref),
                       icon: const Icon(Icons.pause_circle_outline, size: 16),
                       label: const Text('Disable'),
                     )
@@ -226,7 +235,7 @@ class _WarehouseCard extends ConsumerWidget {
                     Tooltip(
                       message: atCap ? 'Your plan has no free warehouse slot' : '',
                       child: TextButton.icon(
-                        onPressed: (!canManage || atCap) ? null : () => _setActive(context, ref, true),
+                        onPressed: (!canDisable || atCap) ? null : () => _setActive(context, ref, true),
                         icon: const Icon(Icons.play_circle_outline, size: 16),
                         label: const Text('Enable'),
                       ),

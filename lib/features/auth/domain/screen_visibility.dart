@@ -1,3 +1,5 @@
+import 'permissions.dart';
+
 /// Every module screen the sidebar/router can show — one entry per branch in
 /// `core/router/app_router.dart`, in the same order as `navItems` in
 /// `app_sidebar.dart`.
@@ -30,80 +32,59 @@ const screenPaths = {
   AppScreen.reports: '/reports',
 };
 
-/// Which screens each role sees at all, derived from the same role/permission
-/// design as `lib/permissions.ts` on aimify-web: a screen is visible to a
-/// role when that role holds a permission the screen is actually about, or
-/// (for the two local-only, unpermissioned screens, Purchases and Expenses)
-/// when the role's day-to-day work is naturally about money coming in or out.
-/// Dashboard is the one screen everyone always sees.
+/// Which screen each module permission opens. A screen backed by the API is
+/// visible exactly when the person holds its `*.view` permission, so the
+/// Owner's Roles & permissions grid on the website decides the sidebar. Credits
+/// & Debts shows whichever side (customers, suppliers) the person can see.
 ///
 /// This decides what appears in the sidebar and what a direct navigation is
 /// allowed to reach — not what a control inside a visible screen can do
-/// (which is still each screen's own `hasPermission` check, since a role can
-/// see a screen it can only partly act on, e.g. Warehouse Manager on
-/// Credits & Debts sees the supplier side but has no `credit.record`).
-const _all = {
-  AppScreen.dashboard,
-  AppScreen.products,
-  AppScreen.inventory,
-  AppScreen.purchases,
-  AppScreen.suppliers,
-  AppScreen.customers,
-  AppScreen.expenses,
-  AppScreen.creditsDebts,
-  AppScreen.warehouses,
-  AppScreen.reports,
+/// (each screen still checks the specific action, e.g. `products.edit`).
+const _viewPermission = {
+  AppScreen.products: Permissions.productsView,
+  AppScreen.inventory: Permissions.stockView,
+  AppScreen.suppliers: Permissions.suppliersView,
+  AppScreen.customers: Permissions.customersView,
+  AppScreen.warehouses: Permissions.warehousesView,
 };
 
-const _visibleScreensByRole = <String, Set<AppScreen>>{
-  'Owner': _all,
-  'Administrator': _all,
-  'Warehouse Manager': {
-    AppScreen.dashboard,
-    AppScreen.products,
-    AppScreen.inventory,
-    AppScreen.purchases,
-    AppScreen.suppliers,
-    AppScreen.creditsDebts,
-    AppScreen.warehouses,
-    AppScreen.reports,
-  },
-  'Inventory Staff': {
-    AppScreen.dashboard,
-    AppScreen.products,
-    AppScreen.inventory,
-    AppScreen.reports,
-  },
-  'Sales Staff': {
-    AppScreen.dashboard,
-    AppScreen.products,
-    AppScreen.inventory,
-    AppScreen.customers,
-    AppScreen.creditsDebts,
-  },
-  'Accountant / Finance': {
-    AppScreen.dashboard,
-    AppScreen.purchases,
-    AppScreen.suppliers,
-    AppScreen.customers,
-    AppScreen.expenses,
-    AppScreen.creditsDebts,
-    AppScreen.reports,
-  },
+/// Purchases, Expenses and Reports have no backend permissions yet (purchases
+/// and expenses are saved on this computer only), so they keep the fixed
+/// role rules they had before the permission grid, until those modules move
+/// to the server.
+const _localScreensByRole = <String, Set<AppScreen>>{
+  'Owner': {AppScreen.purchases, AppScreen.expenses, AppScreen.reports},
+  'Administrator': {AppScreen.purchases, AppScreen.expenses, AppScreen.reports},
+  'Warehouse Manager': {AppScreen.purchases, AppScreen.reports},
+  'Inventory Staff': {AppScreen.reports},
+  'Sales Staff': {},
+  'Accountant / Finance': {AppScreen.purchases, AppScreen.expenses, AppScreen.reports},
 };
 
-/// True if [role] should see [screen] at all. An unrecognized or missing role
-/// (still onboarding, or a role the app doesn't know about) sees only the
-/// dashboard — fails closed, the same way permission checks do.
-bool isScreenVisible(String? role, AppScreen screen) {
-  final allowed = _visibleScreensByRole[role];
-  if (allowed == null) return screen == AppScreen.dashboard;
-  return allowed.contains(screen);
+/// True if someone with [role] and [permissions] should see [screen] at all.
+/// Dashboard is always visible; with no permissions (still loading, or an
+/// unknown role) everything else is hidden — fails closed, the same way
+/// permission checks do.
+bool isScreenVisible(String? role, List<String> permissions, AppScreen screen) {
+  switch (screen) {
+    case AppScreen.dashboard:
+      return true;
+    case AppScreen.creditsDebts:
+      return permissions.contains(Permissions.customersView) ||
+          permissions.contains(Permissions.suppliersView);
+    case AppScreen.purchases:
+    case AppScreen.expenses:
+    case AppScreen.reports:
+      return _localScreensByRole[role]?.contains(screen) ?? false;
+    default:
+      return permissions.contains(_viewPermission[screen]);
+  }
 }
 
-/// Every screen [role] may see, in [AppScreen] declaration order.
-List<AppScreen> visibleScreensFor(String? role) =>
-    AppScreen.values.where((s) => isScreenVisible(role, s)).toList();
+/// Every screen visible to [role] with [permissions], in [AppScreen]
+/// declaration order.
+List<AppScreen> visibleScreensFor(String? role, List<String> permissions) =>
+    AppScreen.values.where((s) => isScreenVisible(role, permissions, s)).toList();
 
 final _screensByPath = {for (final entry in screenPaths.entries) entry.value: entry.key};
 

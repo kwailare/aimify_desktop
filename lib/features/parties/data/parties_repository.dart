@@ -110,7 +110,7 @@ final partiesRepositoryProvider = Provider<PartiesRepository>(
 /// and its data re-fetched — only when the answer actually changes, not on
 /// every `/me` refresh.
 final canReadPartiesProvider = Provider.family<bool, PartyType>((ref, type) {
-  final key = type == PartyType.customer ? Permissions.customersRead : Permissions.suppliersRead;
+  final key = type == PartyType.customer ? Permissions.customersView : Permissions.suppliersView;
   return ref.watch(
     authControllerProvider.select((state) => state.valueOrNull?.hasPermission(key) ?? false),
   );

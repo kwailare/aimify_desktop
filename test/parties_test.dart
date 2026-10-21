@@ -18,6 +18,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'fakes/fake_permissions.dart';
 import 'fakes/fake_repositories.dart';
 import 'fakes/fake_token_storage.dart';
 
@@ -41,7 +42,7 @@ class _RoleAuth extends AuthController {
           subscriptionStatus: 'trial',
         ),
         role: role,
-        permissions: permissions,
+        permissions: asGranted(permissions),
       );
 
   @override
@@ -348,7 +349,7 @@ void main() {
 
   group('roles', () {
     test('a role without customers.read never calls the customers API', () async {
-      final rig = _Rig(role: 'Warehouse Manager', permissions: ['suppliers.read', 'suppliers.write']);
+      final rig = _Rig(role: 'Warehouse Manager', permissions: asGranted(['suppliers.read', 'suppliers.write']));
       addTearDown(rig.dispose);
       await rig.ready();
 
@@ -362,7 +363,7 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
 
-      final rig = _Rig(role: 'Sales Staff', permissions: ['customers.read', 'customers.write', 'stock.out']);
+      final rig = _Rig(role: 'Sales Staff', permissions: asGranted(['customers.read', 'customers.write', 'stock.out']));
       addTearDown(rig.dispose);
 
       Future<void> show(PartyType type) async {
@@ -397,7 +398,7 @@ void main() {
 
       final rig = _Rig(
         role: 'Accountant / Finance',
-        permissions: ['customers.read', 'suppliers.read', 'credit.record'],
+        permissions: asGranted(['customers.read', 'suppliers.read', 'credit.record']),
       );
       addTearDown(rig.dispose);
 

@@ -62,7 +62,8 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
     final productsState = ref.watch(productsProvider);
     final all = ref.watch(productListProvider);
 
-    final canWrite = hasPermission(ref, Permissions.productsWrite);
+    final canCreate = hasPermission(ref, Permissions.productsCreate);
+    final canEdit = hasPermission(ref, Permissions.productsEdit);
     final canArchive = hasPermission(ref, Permissions.productsArchive);
     final me = ref.watch(authControllerProvider).valueOrNull;
     final plan = me?.plan;
@@ -149,13 +150,13 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                 ),
                 if (atProductCap && isOwner) const ManageBillingLink(),
                 Tooltip(
-                  message: !canWrite
+                  message: !canCreate
                       ? "Your role can't add products"
                       : atProductCap
                           ? 'Your plan has reached its product limit — archive one to free a slot'
                           : '',
                   child: OutlinedButton.icon(
-                    onPressed: (!canWrite || atProductCap)
+                    onPressed: (!canCreate || atProductCap)
                         ? null
                         : () async {
                             final imported = await showDialog<bool>(
@@ -169,13 +170,13 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                   ),
                 ),
                 Tooltip(
-                  message: !canWrite
+                  message: !canCreate
                       ? "Your role can't add products"
                       : atProductCap
                           ? 'Your plan has reached its product limit — archive one to free a slot'
                           : '',
                   child: ElevatedButton.icon(
-                    onPressed: (!canWrite || atProductCap)
+                    onPressed: (!canCreate || atProductCap)
                         ? null
                         : () => showDialog(
                               context: context,
@@ -278,7 +279,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
             else if (entries.isEmpty && archivedEntries.isEmpty)
               _EmptyState(
                 hasFilters: _search.isNotEmpty || _categoryFilter != null,
-                canAdd: canWrite && !atProductCap,
+                canAdd: canCreate && !atProductCap,
               )
             else
               Card(
@@ -343,10 +344,10 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                     rows: [
                       for (var i = 0; i < entries.length; i++)
                         _buildRow(context, entries[i], i, theme,
-                            canWrite: canWrite, canArchive: canArchive, archived: false),
+                            canEdit: canEdit, canArchive: canArchive, archived: false),
                       for (var i = 0; i < archivedEntries.length; i++)
                         _buildRow(context, archivedEntries[i], entries.length + i, theme,
-                            canWrite: canWrite, canArchive: canArchive, archived: true),
+                            canEdit: canEdit, canArchive: canArchive, archived: true),
                     ],
                   ),
                 ),
@@ -362,7 +363,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
     Product product,
     int index,
     ThemeData theme, {
-    required bool canWrite,
+    required bool canEdit,
     required bool canArchive,
     required bool archived,
   }) {
@@ -424,7 +425,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
         DataCell(
           archived
               ? TextButton.icon(
-                  onPressed: !canWrite ? null : () => _restore(context, product),
+                  onPressed: !canArchive ? null : () => _restore(context, product),
                   icon: const Icon(Icons.unarchive_outlined, size: 16),
                   label: const Text('Restore'),
                 )
@@ -432,9 +433,9 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     IconButton(
-                      tooltip: canWrite ? 'Edit' : "Your role can't edit products",
+                      tooltip: canEdit ? 'Edit' : "Your role can't edit products",
                       icon: const Icon(Icons.edit_outlined, size: 18),
-                      onPressed: !canWrite
+                      onPressed: !canEdit
                           ? null
                           : () => showDialog(
                                 context: context,

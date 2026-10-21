@@ -4,6 +4,7 @@ import '../../../core/constants/api_constants.dart';
 import '../../../shared/offline/connection.dart';
 import '../../../shared/offline/outbox.dart';
 import '../../../shared/services/authed_api.dart';
+import '../../auth/domain/permissions.dart';
 import '../../auth/presentation/auth_controller.dart';
 import '../../products/data/products_repository.dart';
 import '../../products/domain/product.dart';
@@ -84,10 +85,12 @@ class MovementsNotifier extends AsyncNotifier<List<StockMovement>> {
   @override
   Future<List<StockMovement>> build() async {
     if (ref.watch(sessionUserIdProvider) == null) return const [];
+    if (!ref.watch(holdsPermissionProvider(Permissions.stockView))) return const [];
     return ref.watch(inventoryRepositoryProvider).movements();
   }
 
   Future<void> refresh() async {
+    if (!ref.read(holdsPermissionProvider(Permissions.stockView))) return;
     state = await AsyncValue.guard(ref.read(inventoryRepositoryProvider).movements);
   }
 
@@ -151,10 +154,12 @@ class StockAlertsNotifier extends AsyncNotifier<StockAlerts> {
   @override
   Future<StockAlerts> build() async {
     if (ref.watch(sessionUserIdProvider) == null) return const StockAlerts();
+    if (!ref.watch(holdsPermissionProvider(Permissions.stockView))) return const StockAlerts();
     return ref.watch(inventoryRepositoryProvider).alerts();
   }
 
   Future<void> refresh() async {
+    if (!ref.read(holdsPermissionProvider(Permissions.stockView))) return;
     state = await AsyncValue.guard(ref.read(inventoryRepositoryProvider).alerts);
   }
 }

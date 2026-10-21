@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/constants/api_constants.dart';
 import '../../../shared/services/authed_api.dart';
+import '../../auth/domain/permissions.dart';
 import '../../auth/presentation/auth_controller.dart';
 import '../domain/warehouse.dart';
 
@@ -53,10 +54,12 @@ class WarehousesNotifier extends AsyncNotifier<List<Warehouse>> {
   @override
   Future<List<Warehouse>> build() async {
     if (ref.watch(sessionUserIdProvider) == null) return const [];
+    if (!ref.watch(holdsPermissionProvider(Permissions.warehousesView))) return const [];
     return ref.watch(warehousesRepositoryProvider).list();
   }
 
   Future<void> refresh() async {
+    if (!ref.read(holdsPermissionProvider(Permissions.warehousesView))) return;
     state = await AsyncValue.guard(ref.read(warehousesRepositoryProvider).list);
   }
 

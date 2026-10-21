@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/constants/api_constants.dart';
 import '../../../shared/offline/outbox.dart';
 import '../../../shared/services/authed_api.dart';
+import '../../auth/domain/permissions.dart';
 import '../../auth/presentation/auth_controller.dart';
 import '../../inventory/data/outbox_overlay.dart';
 import '../../sync/sync_engine.dart';
@@ -90,12 +91,14 @@ class ProductsNotifier extends AsyncNotifier<List<Product>> {
   @override
   Future<List<Product>> build() async {
     if (ref.watch(sessionUserIdProvider) == null) return const [];
+    if (!ref.watch(holdsPermissionProvider(Permissions.productsView))) return const [];
     return ref.watch(productsRepositoryProvider).list();
   }
 
   /// Re-reads the list from the server. Called after every write and after
   /// every stock movement, since movements change `currentStock`.
   Future<void> refresh() async {
+    if (!ref.read(holdsPermissionProvider(Permissions.productsView))) return;
     state = await AsyncValue.guard(ref.read(productsRepositoryProvider).list);
   }
 
@@ -221,6 +224,7 @@ class ArchivedProductsNotifier extends AsyncNotifier<List<Product>> {
   @override
   Future<List<Product>> build() async {
     if (ref.watch(sessionUserIdProvider) == null) return const [];
+    if (!ref.watch(holdsPermissionProvider(Permissions.productsView))) return const [];
     return ref.watch(productsRepositoryProvider).listArchived();
   }
 

@@ -89,7 +89,8 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
     final warehouses = ref.watch(warehouseListProvider);
     final myId = ref.watch(sessionUserIdProvider);
 
-    final canRecordAnything = hasPermission(ref, Permissions.stockOut) ||
+    final canRecordAnything = hasPermission(ref, Permissions.stockIn) ||
+        hasPermission(ref, Permissions.stockOut) ||
         hasPermission(ref, Permissions.stockAdjust);
 
     final productById = {for (final p in products) p.id: p};

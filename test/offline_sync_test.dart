@@ -29,12 +29,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
+import 'fakes/fake_permissions.dart';
 import 'fakes/fake_repositories.dart';
 import 'fakes/fake_token_storage.dart';
 
 class _OwnerAuth extends AuthController {
   @override
-  Future<MeResponse?> build() async => const MeResponse(
+  Future<MeResponse?> build() async => MeResponse(
         user: AuthUser(id: 'u1', name: 'Ada Obi', email: 'ada@company.com'),
         organization: Organization(
           id: 'o1',
@@ -45,7 +46,7 @@ class _OwnerAuth extends AuthController {
           subscriptionStatus: 'trial',
         ),
         role: 'Owner',
-        permissions: ['products.write', 'stock.out', 'stock.adjust'],
+        permissions: asGranted(['products.write', 'stock.out', 'stock.adjust']),
       );
 
   @override

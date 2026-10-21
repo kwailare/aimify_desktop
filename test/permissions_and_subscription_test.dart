@@ -15,6 +15,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'fakes/fake_permissions.dart';
 import 'fakes/fake_repositories.dart';
 import 'fakes/fake_token_storage.dart';
 
@@ -30,31 +31,31 @@ const _orgBase = Organization(
 
 class _SalesStaffAuthController extends AuthController {
   @override
-  Future<MeResponse?> build() async => const MeResponse(
+  Future<MeResponse?> build() async => MeResponse(
         user: AuthUser(id: 'u1', name: 'Chidi Sales', email: 'chidi@company.com'),
         organization: _orgBase,
         role: 'Sales Staff',
         // Per docs/desktop-api.md, Sales Staff holds only `stock.out`.
-        permissions: ['stock.out'],
+        permissions: asGranted(['stock.out']),
       );
 }
 
 class _AccountantAuthController extends AuthController {
   @override
-  Future<MeResponse?> build() async => const MeResponse(
+  Future<MeResponse?> build() async => MeResponse(
         user: AuthUser(id: 'u1', name: 'Bola Finance', email: 'bola@company.com'),
         organization: _orgBase,
         role: 'Accountant / Finance',
         // Per docs/desktop-api.md: reads customers/suppliers and records
         // credit entries, but can't create/edit/archive either — read-only
         // wherever this role can see anything at all.
-        permissions: ['customers.read', 'suppliers.read', 'credit.record'],
+        permissions: asGranted(['customers.read', 'suppliers.read', 'credit.record']),
       );
 }
 
 class _ExpiredOrgAuthController extends AuthController {
   @override
-  Future<MeResponse?> build() async => const MeResponse(
+  Future<MeResponse?> build() async => MeResponse(
         user: AuthUser(id: 'u1', name: 'Ada Obi', email: 'ada@company.com'),
         organization: Organization(
           id: 'o1',
@@ -66,13 +67,13 @@ class _ExpiredOrgAuthController extends AuthController {
           trialEndsAt: null,
         ),
         role: 'Owner',
-        permissions: ['products.write'],
+        permissions: asGranted(['products.write']),
       );
 }
 
 class _PastDueOrgAuthController extends AuthController {
   @override
-  Future<MeResponse?> build() async => const MeResponse(
+  Future<MeResponse?> build() async => MeResponse(
         user: AuthUser(id: 'u1', name: 'Ada Obi', email: 'ada@company.com'),
         organization: Organization(
           id: 'o1',
@@ -84,7 +85,7 @@ class _PastDueOrgAuthController extends AuthController {
           trialEndsAt: null,
         ),
         role: 'Owner',
-        permissions: ['products.write'],
+        permissions: asGranted(['products.write']),
       );
 }
 
@@ -161,16 +162,20 @@ void main() {
       expect(allowedMovementTypes(['stock.out']), [StockMovementType.stockOut]);
     });
 
-    test('stock.adjust unlocks Stock in, Adjustment and Stock count but not Stock out', () {
+    test('stock.adjust unlocks Adjustment and Stock count only', () {
       expect(
         allowedMovementTypes(['stock.adjust']),
-        [StockMovementType.stockIn, StockMovementType.adjustment, StockMovementType.count],
+        [StockMovementType.adjustment, StockMovementType.count],
       );
     });
 
-    test('both permissions unlock all three, in menu order', () {
+    test('stock.in unlocks only Stock in', () {
+      expect(allowedMovementTypes(['stock.in']), [StockMovementType.stockIn]);
+    });
+
+    test('all three permissions unlock every type, in menu order', () {
       expect(
-        allowedMovementTypes(['stock.out', 'stock.adjust']),
+        allowedMovementTypes(['stock.in', 'stock.out', 'stock.adjust']),
         [
           StockMovementType.stockIn,
           StockMovementType.stockOut,

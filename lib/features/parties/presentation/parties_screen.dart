@@ -30,11 +30,19 @@ class PartiesScreen extends ConsumerWidget {
     final isCustomer = type == PartyType.customer;
     final canRead = hasPermission(
       ref,
-      isCustomer ? Permissions.customersRead : Permissions.suppliersRead,
+      isCustomer ? Permissions.customersView : Permissions.suppliersView,
     );
-    final canWrite = hasPermission(
+    final canCreate = hasPermission(
       ref,
-      isCustomer ? Permissions.customersWrite : Permissions.suppliersWrite,
+      isCustomer ? Permissions.customersCreate : Permissions.suppliersCreate,
+    );
+    final canEdit = hasPermission(
+      ref,
+      isCustomer ? Permissions.customersEdit : Permissions.suppliersEdit,
+    );
+    final canArchive = hasPermission(
+      ref,
+      isCustomer ? Permissions.customersArchive : Permissions.suppliersArchive,
     );
     final state = ref.watch(partiesProvider(type));
     final parties = ref.watch(partyListProvider(type));
@@ -61,7 +69,7 @@ class PartiesScreen extends ConsumerWidget {
           padding: const EdgeInsets.all(32),
           child: Center(
             child: Text(
-              canWrite
+              canCreate
                   ? 'No ${type.plural} yet. Use "Add $noun" to add one.'
                   : 'No ${type.plural} yet.',
             ),
@@ -120,9 +128,9 @@ class PartiesScreen extends ConsumerWidget {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           IconButton(
-                            tooltip: canWrite ? 'Edit' : "Your role can't edit ${type.plural}",
+                            tooltip: canEdit ? 'Edit' : "Your role can't edit ${type.plural}",
                             icon: const Icon(Icons.edit_outlined, size: 18),
-                            onPressed: !canWrite
+                            onPressed: !canEdit
                                 ? null
                                 : () => showDialog(
                                       context: context,
@@ -130,9 +138,9 @@ class PartiesScreen extends ConsumerWidget {
                                     ),
                           ),
                           IconButton(
-                            tooltip: canWrite ? 'Archive' : "Your role can't archive ${type.plural}",
+                            tooltip: canArchive ? 'Archive' : "Your role can't archive ${type.plural}",
                             icon: const Icon(Icons.archive_outlined, size: 18),
-                            onPressed: !canWrite ? null : () => _confirmArchive(context, ref, parties[i]),
+                            onPressed: !canArchive ? null : () => _confirmArchive(context, ref, parties[i]),
                           ),
                         ],
                       ),
@@ -158,9 +166,9 @@ class PartiesScreen extends ConsumerWidget {
                   : 'Not available for your role',
               actions: [
                 Tooltip(
-                  message: canWrite ? '' : "Your role can't add ${type.plural}",
+                  message: canCreate ? '' : "Your role can't add ${type.plural}",
                   child: ElevatedButton.icon(
-                    onPressed: canWrite
+                    onPressed: canCreate
                         ? () => showDialog(
                               context: context,
                               builder: (_) => PartyFormDialog(type: type),

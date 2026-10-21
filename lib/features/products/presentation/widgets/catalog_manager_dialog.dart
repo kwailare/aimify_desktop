@@ -91,13 +91,14 @@ class _CatalogListState extends ConsumerState<_CatalogList> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final canEdit = hasPermission(ref, Permissions.catalogWrite);
+    final canAdd = hasPermission(ref, Permissions.catalogCreate);
+    final canDelete = hasPermission(ref, Permissions.catalogDelete);
     final options = ref.watch(catalogProvider(widget.kind));
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (canEdit)
+        if (canAdd)
           Row(
             children: [
               Expanded(
@@ -145,7 +146,7 @@ class _CatalogListState extends ConsumerState<_CatalogList> {
                         ListTile(
                           dense: true,
                           title: Text(item.name),
-                          trailing: canEdit
+                          trailing: canDelete
                               ? IconButton(
                                   tooltip: 'Remove',
                                   icon: const Icon(Icons.delete_outline, size: 18),

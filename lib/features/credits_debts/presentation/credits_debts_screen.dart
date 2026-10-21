@@ -45,8 +45,8 @@ class _CreditsDebtsScreenState extends ConsumerState<CreditsDebtsScreen>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final canSeeCustomers = hasPermission(ref, Permissions.customersRead);
-    final canSeeSuppliers = hasPermission(ref, Permissions.suppliersRead);
+    final canSeeCustomers = hasPermission(ref, Permissions.customersView);
+    final canSeeSuppliers = hasPermission(ref, Permissions.suppliersView);
     final canRecord = hasPermission(ref, Permissions.creditRecord);
     final customers = ref.watch(partyListProvider(PartyType.customer));
     final suppliers = ref.watch(partyListProvider(PartyType.supplier));

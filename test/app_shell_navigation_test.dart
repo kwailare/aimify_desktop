@@ -21,12 +21,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'fakes/fake_permissions.dart';
 import 'fakes/fake_repositories.dart';
 import 'fakes/fake_token_storage.dart';
 
 class _FakeAuthController extends AuthController {
   @override
-  Future<MeResponse?> build() async => const MeResponse(
+  Future<MeResponse?> build() async => MeResponse(
         user: AuthUser(id: 'u1', name: 'Ada Obi', email: 'ada@company.com'),
         organization: Organization(
           id: 'o1',
@@ -40,14 +41,7 @@ class _FakeAuthController extends AuthController {
         role: 'Owner',
         // Full Owner permission set (see docs/desktop-api.md) — this test
         // exercises navigation, not permission gating itself.
-        permissions: [
-          'products.write',
-          'products.archive',
-          'catalog.write',
-          'warehouses.manage',
-          'stock.out',
-          'stock.adjust',
-        ],
+        permissions: defaultPermissionsFor('Owner').where((p) => p != 'setup.complete').toList(),
       );
 }
 

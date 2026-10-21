@@ -58,44 +58,68 @@ the status from `trial` to `expired`, so `/me` always reports the real value.
 ## Roles and permissions
 
 Each person has a role, set on the website's Team page and returned by `/me`.
-After the subscription check, write endpoints check the role. A role that isn't
-allowed gets `403`:
+What each role may do is a per-organization grid the Owner edits on the
+website (Team, then Roles & permissions). Every organization starts with the
+defaults below. Owners always hold every permission and their row can't be
+changed. Every endpoint, reads included, checks the grid after the
+subscription check. A refused call gets `403`:
 
 ```json
 {
   "error": "Your role (Sales Staff) isn't allowed to do this.",
   "code": "forbidden_role",
   "role": "Sales Staff",
-  "permission": "products.write"
+  "permission": "products.create"
 }
 ```
 
-`/me` also returns `permissions`, the list the signed-in role holds, so the
-desktop app can hide or disable controls instead of waiting for a `403`.
-Reading products, warehouses, categories, units, movements and alerts is open
-to every role. Customers, suppliers and the credit ledger hold money records,
-so they have their own read permissions.
+`/me` returns `permissions`, everything the signed-in person currently holds,
+so the desktop app can hide screens and controls instead of waiting for a
+`403`. An Owner's change applies on the very next request; the app picks it
+up whenever it re-reads `/me` (after any `402`/`403`, and on refresh).
 
-| Permission | Covers | Roles |
-|---|---|---|
-| `products.write` | Create and edit products, upload or remove product images | Owner, Administrator, Warehouse Manager, Inventory Staff |
-| `products.archive` | Archive a product | Owner, Administrator, Warehouse Manager |
-| `catalog.write` | Add or delete categories and units | Owner, Administrator, Warehouse Manager, Inventory Staff |
-| `warehouses.manage` | Create, edit and disable warehouses | Owner, Administrator, Warehouse Manager |
-| `stock.out` | Record a `stock_out` movement | The roles above plus Sales Staff |
-| `stock.adjust` | Record `stock_in`, `adjustment` and `count` movements | Owner, Administrator, Warehouse Manager, Inventory Staff |
-| `customers.read` | List and read customers and their credit ledger | Owner, Administrator, Sales Staff, Accountant / Finance |
-| `customers.write` | Add, edit and archive customers | Owner, Administrator, Sales Staff |
-| `suppliers.read` | List and read suppliers and their credit ledger | Owner, Administrator, Warehouse Manager, Accountant / Finance |
-| `suppliers.write` | Add, edit and archive suppliers | Owner, Administrator, Warehouse Manager |
-| `credit.record` | Record charges, payments and adjustments on a customer's or supplier's credit ledger | Owner, Administrator, Accountant / Finance |
-| `team.manage` | List the team and invite people | Owner, Administrator |
-| `setup.complete` | Mark the guided setup as finished | Owner, Administrator |
+| Module | Permission | Covers | Default roles |
+|---|---|---|---|
+| Products | `products.view` | List and read products | Everyone |
+| | `products.create` | Add a product | Owner, Administrator, Warehouse Manager, Inventory Staff |
+| | `products.edit` | Edit a product, upload or remove its image | Owner, Administrator, Warehouse Manager, Inventory Staff |
+| | `products.archive` | Archive or restore a product | Owner, Administrator, Warehouse Manager |
+| Categories & units | `catalog.view` | List categories and units | Everyone |
+| | `catalog.create` | Add a category or unit | Owner, Administrator, Warehouse Manager, Inventory Staff |
+| | `catalog.delete` | Delete a category or unit | Owner, Administrator, Warehouse Manager, Inventory Staff |
+| Stock movements | `stock.view` | List movements and stock alerts | Everyone |
+| | `stock.in` | Record `stock_in` | Owner, Administrator, Warehouse Manager, Inventory Staff |
+| | `stock.out` | Record `stock_out` | The roles above plus Sales Staff |
+| | `stock.adjust` | Record `adjustment` and `count` | Owner, Administrator, Warehouse Manager, Inventory Staff |
+| Warehouses | `warehouses.view` | List warehouses | Everyone |
+| | `warehouses.create` | Add a warehouse | Owner, Administrator, Warehouse Manager |
+| | `warehouses.edit` | Edit a warehouse's details | Owner, Administrator, Warehouse Manager |
+| | `warehouses.disable` | Disable or re-enable a warehouse | Owner, Administrator, Warehouse Manager |
+| Customers | `customers.view` | List and read customers and their credit ledger | Owner, Administrator, Sales Staff, Accountant / Finance |
+| | `customers.create` / `.edit` / `.archive` | Add, edit, archive or restore | Owner, Administrator, Sales Staff |
+| Suppliers | `suppliers.view` | List and read suppliers and their credit ledger | Owner, Administrator, Warehouse Manager, Accountant / Finance |
+| | `suppliers.create` / `.edit` / `.archive` | Add, edit, archive or restore | Owner, Administrator, Warehouse Manager |
+| Credit ledger | `credit.record` | Record charges, payments and adjustments (also needs view of that customer or supplier) | Owner, Administrator, Accountant / Finance |
+| Fixed | `team.manage` | List the team and invite people | Owner, Administrator (not editable) |
+| | `setup.complete` | Mark the guided setup as finished | Owner, Administrator (not editable) |
 
-Accountant / Finance can read customers and suppliers and record credit, but
-not change products, stock or the customer and supplier records themselves.
-Inventory Staff has none of the money permissions. The role rules live in
-`lib/permissions.ts` in `aimify-web`.
+Some permissions bring others with them, because the action can't work
+without them: every action includes its module's `view`; `stock.in`,
+`stock.out` and `stock.adjust` include `products.view` and `warehouses.view`
+(a movement picks both); `products.create` and `products.edit` include
+`catalog.view`. The grid editor applies the same rule, so a saved grid is
+always consistent.
+
+An update that changes `status` (archive, restore, disable, re-enable) needs
+the archive/disable permission; an update that changes other fields needs the
+edit permission; one that does both needs both, and is refused as a whole if
+either is missing.
+
+For desktop builds released before this grid existed, `/me` also still sends
+the older combined keys, derived from the grid: `products.write`,
+`catalog.write`, `warehouses.manage`, `customers.read`, `customers.write`,
+`suppliers.read` and `suppliers.write`. New code should use the keys above.
+The rules live in `lib/permissions.ts` in `aimify-web`.
 
 ## Plan limits
 
@@ -258,12 +282,19 @@ Success — `200`:
   },
   "role": "Owner",
   "permissions": [
-    "products.write",
+    "products.view",
+    "products.create",
+    "products.edit",
     "products.archive",
-    "catalog.write",
-    "warehouses.manage",
+    "stock.view",
+    "stock.in",
     "stock.out",
-    "stock.adjust"
+    "stock.adjust",
+    "...",
+    "team.manage",
+    "setup.complete",
+    "products.write",
+    "..."
   ]
 }
 ```

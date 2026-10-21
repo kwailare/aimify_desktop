@@ -103,7 +103,7 @@ class AppSidebar extends ConsumerWidget {
     // computed fresh on every build rather than cached at sign-in.
     final visibleIndices = [
       for (var i = 0; i < navItems.length; i++)
-        if (isScreenVisible(me?.role, AppScreen.values[i])) i,
+        if (isScreenVisible(me?.role, me?.permissions ?? const [], AppScreen.values[i])) i,
     ];
     final selectedPosition = visibleIndices.indexOf(currentIndex);
 

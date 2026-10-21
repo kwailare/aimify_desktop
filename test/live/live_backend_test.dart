@@ -174,7 +174,7 @@ void main() {
     expect(me.role, 'Owner');
     expect(me.organization!.subscriptionStatus, 'trial');
     expect(me.organization!.warehouseName, isNull, reason: 'a brand-new org has no warehouse yet');
-    expect(me.permissions, containsAll(['products.write', 'stock.out', 'stock.adjust']));
+    expect(me.permissions, containsAll(['products.create', 'products.edit', 'stock.in', 'stock.out', 'stock.adjust']));
     expect(me.plan!.limits.warehouses, 1);
     expect(me.plan!.usage.warehouses, 0);
 
@@ -345,7 +345,8 @@ void main() {
 
     expect(me.role, 'Sales Staff');
     // Sales Staff record stock out and work with customers — nothing else.
-    expect(me.permissions, ['stock.out', 'customers.read', 'customers.write']);
+    expect(me.permissions, containsAll(['stock.out', 'customers.view', 'customers.create', 'customers.edit', 'customers.archive']));
+    expect(me.permissions, isNot(anyOf(contains('stock.in'), contains('products.create'))));
     expect(allowedMovementTypes(me.permissions), [StockMovementType.stockOut]);
 
     // reading is open to every role
@@ -361,12 +362,12 @@ void main() {
       fail('Sales Staff must not create products');
     } on ApiException catch (e) {
       expect(e.isForbiddenRole, isTrue);
-      expect(e.requiredPermission, 'products.write');
+      expect(e.requiredPermission, 'products.create');
       expect(friendlyError(e), contains('Sales Staff'));
     }
     await _expectApiError(
       () => container.read(warehousesProvider.notifier).add(name: 'nope'),
-      (e) => e.isForbiddenRole && e.requiredPermission == 'warehouses.manage',
+      (e) => e.isForbiddenRole && e.requiredPermission == 'warehouses.create',
     );
     await _expectApiError(
       () => container.read(catalogProvider(CatalogKind.category).notifier).add('nope'),
@@ -384,7 +385,7 @@ void main() {
         type: StockMovementType.stockIn,
         quantity: 1,
       ),
-      (e) => e.isForbiddenRole && e.requiredPermission == 'stock.adjust',
+      (e) => e.isForbiddenRole && e.requiredPermission == 'stock.in',
     );
 
     // give the shared product some stock through an Owner, then sell it
@@ -569,8 +570,8 @@ void main() {
     // ---- Owner: full cycle against the real API
     final owner = await _signIn(_need('AIMIFY_OWNER_EMAIL'));
     final me = owner.read(authControllerProvider).value!;
-    expect(me.permissions, containsAll(['customers.read', 'customers.write', 'suppliers.read',
-        'suppliers.write', 'credit.record']));
+    expect(me.permissions, containsAll(['customers.view', 'customers.create', 'suppliers.view',
+        'suppliers.create', 'credit.record']));
 
     await owner.read(partiesProvider(PartyType.customer).future);
     await owner.read(partiesProvider(PartyType.supplier).future);
@@ -656,8 +657,8 @@ void main() {
     // ---- Sales Staff: customers yes, suppliers no, no credit.record
     final sales = await _signIn(_need('AIMIFY_SALES_EMAIL'));
     final salesMe = sales.read(authControllerProvider).value!;
-    expect(salesMe.permissions, containsAll(['customers.read', 'customers.write']));
-    expect(salesMe.permissions, isNot(contains('suppliers.read')));
+    expect(salesMe.permissions, containsAll(['customers.view', 'customers.create']));
+    expect(salesMe.permissions, isNot(contains('suppliers.view')));
     expect(salesMe.permissions, isNot(contains('credit.record')));
 
     final salesCustomers = await sales.read(partiesProvider(PartyType.customer).future);
@@ -668,7 +669,7 @@ void main() {
     // ...and the server agrees when asked directly.
     await _expectApiError(
       () => sales.read(authedApiProvider).get('http://localhost:3000/api/v1/suppliers'),
-      (e) => e.isForbiddenRole && e.requiredPermission == 'suppliers.read',
+      (e) => e.isForbiddenRole && e.requiredPermission == 'suppliers.view',
     );
     await _expectApiError(
       () => sales.read(creditServiceProvider).record(
@@ -684,8 +685,8 @@ void main() {
     // ---- Accountant: reads both sides, cannot edit, can record payments
     final accountant = await _signIn(_need('AIMIFY_ACCOUNTANT_EMAIL'));
     final acctMe = accountant.read(authControllerProvider).value!;
-    expect(acctMe.permissions, containsAll(['customers.read', 'suppliers.read', 'credit.record']));
-    expect(acctMe.permissions, isNot(contains('customers.write')));
+    expect(acctMe.permissions, containsAll(['customers.view', 'suppliers.view', 'credit.record']));
+    expect(acctMe.permissions, isNot(contains('customers.create')));
     await accountant.read(partiesProvider(PartyType.customer).future);
     await accountant.read(partiesProvider(PartyType.supplier).future);
     expect(accountant.read(partyListProvider(PartyType.supplier)).single.balanceOwed, 750);
@@ -693,7 +694,7 @@ void main() {
       () => accountant.read(partiesProvider(PartyType.customer).notifier).add(
             const PartyInput(type: PartyType.customer, name: 'nope'),
           ),
-      (e) => e.isForbiddenRole && e.requiredPermission == 'customers.write',
+      (e) => e.isForbiddenRole && e.requiredPermission == 'customers.create',
     );
     final acctPayment = await accountant.read(creditServiceProvider).record(
           partyType: PartyType.supplier, partyId: supplier.id, kind: CreditKind.payment, amount: 250,

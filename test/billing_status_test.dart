@@ -14,6 +14,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'fakes/fake_permissions.dart';
 import 'fakes/fake_repositories.dart';
 
 const _ownerPermissions = [
@@ -51,7 +52,7 @@ class _Auth extends AuthController {
           cancelAtPeriodEnd: cancelAtPeriodEnd,
         ),
         role: role,
-        permissions: _ownerPermissions,
+        permissions: asGranted(_ownerPermissions),
         plan: plan,
       );
 }

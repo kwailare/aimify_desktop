@@ -88,3 +88,13 @@ final authControllerProvider =
 final sessionUserIdProvider = Provider<String?>(
   (ref) => ref.watch(authControllerProvider).valueOrNull?.user.id,
 );
+
+/// Whether the signed-in person holds [permission] right now. Data providers
+/// watch this so someone without a module's `*.view` never calls an endpoint
+/// that would only refuse them, and so the data appears the moment the Owner
+/// grants it (on the next `/me` read).
+final holdsPermissionProvider = Provider.family<bool, String>(
+  (ref, permission) => ref.watch(
+    authControllerProvider.select((state) => state.valueOrNull?.hasPermission(permission) ?? false),
+  ),
+);

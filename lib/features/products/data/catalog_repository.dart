@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/constants/api_constants.dart';
 import '../../../shared/services/authed_api.dart';
+import '../../auth/domain/permissions.dart';
 import '../../auth/presentation/auth_controller.dart';
 
 /// One entry in the organization's category or unit list.
@@ -59,10 +60,12 @@ class CatalogNotifier extends FamilyAsyncNotifier<List<CatalogOption>, CatalogKi
   @override
   Future<List<CatalogOption>> build(CatalogKind arg) async {
     if (ref.watch(sessionUserIdProvider) == null) return const [];
+    if (!ref.watch(holdsPermissionProvider(Permissions.catalogView))) return const [];
     return ref.watch(catalogRepositoryProvider).list(arg);
   }
 
   Future<void> refresh() async {
+    if (!ref.read(holdsPermissionProvider(Permissions.catalogView))) return;
     state = await AsyncValue.guard(() => ref.read(catalogRepositoryProvider).list(arg));
   }
 

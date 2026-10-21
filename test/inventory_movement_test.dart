@@ -15,6 +15,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'fakes/fake_permissions.dart';
 import 'fakes/fake_repositories.dart';
 
 class _RoleAuth extends AuthController {
@@ -34,7 +35,7 @@ class _RoleAuth extends AuthController {
           subscriptionStatus: 'trial',
         ),
         role: 'Owner',
-        permissions: permissions,
+        permissions: asGranted(permissions),
       );
 }
 
@@ -130,7 +131,7 @@ void main() {
 
   group('Record movement dialog', () {
     testWidgets('stock in records the positive quantity', (tester) async {
-      final inventory = await _openDialog(tester, permissions: ['stock.out', 'stock.adjust']);
+      final inventory = await _openDialog(tester, permissions: asGranted(['stock.out', 'stock.adjust']));
 
       await _enterQuantityAndSave(tester, '5');
 
@@ -141,7 +142,7 @@ void main() {
     });
 
     testWidgets('Sales Staff record stock out as a negative quantity', (tester) async {
-      final inventory = await _openDialog(tester, permissions: ['stock.out']);
+      final inventory = await _openDialog(tester, permissions: asGranted(['stock.out']));
 
       await _enterQuantityAndSave(tester, '3');
 
@@ -151,7 +152,7 @@ void main() {
     });
 
     testWidgets('stock out above what is on hand is refused before sending', (tester) async {
-      final inventory = await _openDialog(tester, permissions: ['stock.out']);
+      final inventory = await _openDialog(tester, permissions: asGranted(['stock.out']));
 
       await _enterQuantityAndSave(tester, '99');
 
@@ -161,7 +162,7 @@ void main() {
     });
 
     testWidgets('a role with no stock permissions cannot save', (tester) async {
-      await _openDialog(tester, permissions: const []);
+      await _openDialog(tester, permissions: asGranted([]));
 
       expect(find.textContaining("isn't allowed to record"), findsOneWidget);
       final save = tester.widget<ElevatedButton>(find.widgetWithText(ElevatedButton, 'Save'));

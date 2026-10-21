@@ -104,7 +104,7 @@ String? _redirect(BuildContext context, GoRouterState state) {
   // this person was already sitting on it. `/` (dashboard) is always visible,
   // so it's always a safe landing spot.
   final screen = screenForPath(location);
-  if (screen != null && !isScreenVisible(me.role, screen)) {
+  if (screen != null && !isScreenVisible(me.role, me.permissions, screen)) {
     return location == '/' ? null : '/';
   }
 
