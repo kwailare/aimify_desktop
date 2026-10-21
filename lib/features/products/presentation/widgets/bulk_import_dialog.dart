@@ -12,6 +12,7 @@ import '../../../../shared/widgets/manage_billing_link.dart';
 import '../../../auth/presentation/auth_controller.dart';
 import '../../../inventory/data/inventory_repository.dart';
 import '../../../inventory/domain/stock_movement.dart';
+import '../../../parties/data/supplier_options.dart';
 import '../../../warehouses/data/warehouses_repository.dart';
 import '../../../warehouses/domain/warehouse.dart';
 import '../../data/catalog_repository.dart';
@@ -97,7 +98,14 @@ class _BulkImportDialogState extends ConsumerState<BulkImportDialog> {
     final bytes = file?.bytes;
     if (file == null || bytes == null) return;
 
-    final parsed = parseProductWorkbook(bytes);
+    List<SupplierOption> suppliers;
+    try {
+      suppliers = await ref.read(supplierOptionsProvider.future);
+    } catch (_) {
+      suppliers = const [];
+    }
+    if (!mounted) return;
+    final parsed = parseProductWorkbook(bytes, suppliers: suppliers);
     if (parsed.hasFatalError) {
       setState(() => _pickError = parsed.sheetError);
       return;
@@ -364,6 +372,12 @@ class _PreviewStep extends StatelessWidget {
                 color: const Color(0xFF2F8F5B),
                 icon: Icons.check_circle_outline,
               ),
+              if (result.validRows.any((r) => r.warning != null))
+                _CountChip(
+                  label: '${result.validRows.where((r) => r.warning != null).length} with warnings',
+                  color: const Color(0xFFB7791F),
+                  icon: Icons.info_outline,
+                ),
               if (result.invalidRows.isNotEmpty)
                 _CountChip(
                   label: '${result.invalidRows.length} with errors',
@@ -400,9 +414,11 @@ class _PreviewStep extends StatelessWidget {
                   _RowTile(
                     ok: true,
                     title: '${row.input.sku} — ${row.input.name}',
-                    subtitle: row.openingStock > 0
-                        ? 'Row ${row.rowNumber} · opening stock ${row.openingStock}'
-                        : 'Row ${row.rowNumber}',
+                    subtitle: [
+                      'Row ${row.rowNumber}',
+                      if (row.openingStock > 0) 'opening stock ${row.openingStock}',
+                      ?row.warning,
+                    ].join(' · '),
                   ),
                 for (final row in result.invalidRows)
                   _RowTile(

@@ -1,6 +1,7 @@
 import 'package:aimify_desktop/features/inventory/data/inventory_repository.dart';
 import 'package:aimify_desktop/features/inventory/domain/stock_movement.dart';
 import 'package:aimify_desktop/features/parties/data/parties_repository.dart';
+import 'package:aimify_desktop/features/parties/data/supplier_options.dart';
 import 'package:aimify_desktop/features/parties/domain/party.dart';
 import 'package:aimify_desktop/features/products/data/catalog_repository.dart';
 import 'package:aimify_desktop/features/products/data/products_repository.dart';
@@ -344,11 +345,25 @@ class FakePartiesRepository implements PartiesRepository {
 }
 
 /// The overrides that swap every network repository for an in-memory one.
+class FakeSupplierOptionsRepository implements SupplierOptionsRepository {
+  FakeSupplierOptionsRepository([this.options = const []]);
+
+  List<SupplierOption> options;
+  int listCalls = 0;
+
+  @override
+  Future<List<SupplierOption>> list() async {
+    listCalls++;
+    return List.of(options);
+  }
+}
+
 List<Override> fakeDataOverrides({
   FakeProductsRepository? products,
   FakeWarehousesRepository? warehouses,
   FakeInventoryRepository? inventory,
   FakePartiesRepository? parties,
+  FakeSupplierOptionsRepository? supplierOptions,
   LocalStore? store,
 }) =>
     [
@@ -362,4 +377,5 @@ List<Override> fakeDataOverrides({
       inventoryRepositoryProvider.overrideWithValue(inventory ?? FakeInventoryRepository()),
       partiesRepositoryProvider.overrideWithValue(parties ?? FakePartiesRepository()),
       catalogRepositoryProvider.overrideWithValue(FakeCatalogRepository()),
+      supplierOptionsRepositoryProvider.overrideWithValue(supplierOptions ?? FakeSupplierOptionsRepository()),
     ];

@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/utils/formatters.dart';
 import '../../../shared/utils/friendly_error.dart';
+import '../../parties/data/supplier_options.dart';
 import '../data/catalog_repository.dart';
 import '../data/products_repository.dart';
 import '../domain/product.dart';
@@ -41,6 +42,8 @@ class _ProductFormDialogState extends ConsumerState<ProductFormDialog> {
   late final _sellingPrice = TextEditingController(text: _num(widget.product?.sellingPrice));
   late final _minStock = TextEditingController(text: '${widget.product?.minStock ?? 0}');
   late final _maxStock = TextEditingController(text: widget.product?.maxStock?.toString() ?? '');
+
+  late String? _supplierId = widget.product?.supplierId;
 
   Uint8List? _pickedImage;
   String? _pickedImageName;
@@ -108,6 +111,7 @@ class _ProductFormDialogState extends ConsumerState<ProductFormDialog> {
       sellingPrice: double.parse(_sellingPrice.text.trim()),
       minStock: int.parse(_minStock.text.trim()),
       maxStock: _maxStock.text.trim().isEmpty ? null : int.parse(_maxStock.text.trim()),
+      supplierId: _supplierId,
     );
 
     setState(() {
@@ -300,6 +304,12 @@ class _ProductFormDialogState extends ConsumerState<ProductFormDialog> {
                   ],
                 ),
                 const SizedBox(height: 12),
+                _SupplierField(
+                  value: _supplierId,
+                  enabled: !_saving,
+                  onChanged: (id) => setState(() => _supplierId = id),
+                ),
+                const SizedBox(height: 12),
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -478,6 +488,49 @@ class _ImageRow extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// The product's usual supplier: "No supplier", or one of the active
+/// suppliers. A link to a supplier archived since stays selectable, marked
+/// as archived, so editing other fields never drops it.
+class _SupplierField extends ConsumerWidget {
+  const _SupplierField({required this.value, required this.enabled, required this.onChanged});
+
+  final String? value;
+  final bool enabled;
+  final ValueChanged<String?> onChanged;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final options = ref.watch(supplierOptionsProvider);
+    final all = options.valueOrNull ?? const <SupplierOption>[];
+    final current = all.where((o) => o.id == value).firstOrNull;
+    final choices = [
+      for (final o in all)
+        if (!o.isArchived || o.id == value) o,
+    ];
+    final unknownCurrent = value != null && current == null;
+
+    return DropdownButtonFormField<String?>(
+      key: const Key('product-supplier'),
+      initialValue: unknownCurrent ? null : value,
+      isExpanded: true,
+      decoration: InputDecoration(
+        labelText: 'Supplier',
+        helperText: options.isLoading && !options.hasValue
+            ? 'Loading suppliers…'
+            : unknownCurrent
+                ? 'The linked supplier isn''t available on this computer right now; saving keeps it.'
+                : null,
+      ),
+      items: [
+        const DropdownMenuItem<String?>(value: null, child: Text('No supplier')),
+        for (final o in choices)
+          DropdownMenuItem<String?>(value: o.id, child: Text(o.label, overflow: TextOverflow.ellipsis)),
+      ],
+      onChanged: !enabled || unknownCurrent ? null : onChanged,
     );
   }
 }

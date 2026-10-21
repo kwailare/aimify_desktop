@@ -20,6 +20,7 @@ class Product {
     this.maxStock,
     required this.currentStock,
     required this.status,
+    this.supplierId,
     this.isPending = false,
   });
 
@@ -46,6 +47,10 @@ class Product {
 
   /// `active`, `inactive` or `archived`.
   final String status;
+
+  /// The usual supplier, or `null`. Its name comes from
+  /// `supplierOptionsProvider`, which doesn't need `suppliers.view`.
+  final String? supplierId;
 
   /// True for a product created while offline that hasn't reached the
   /// server yet — it exists only on this computer for now.
@@ -78,6 +83,7 @@ class Product {
         maxStock: input.maxStock,
         currentStock: currentStock,
         status: status,
+        supplierId: input.supplierId,
         isPending: pending ?? isPending,
       );
 
@@ -97,6 +103,7 @@ class Product {
         maxStock: maxStock,
         currentStock: stock,
         status: status,
+        supplierId: supplierId,
         isPending: isPending,
       );
 
@@ -116,6 +123,7 @@ class Product {
         maxStock: (json['maxStock'] as num?)?.toInt(),
         currentStock: (json['currentStock'] as num?)?.toInt() ?? 0,
         status: json['status'] as String? ?? 'active',
+        supplierId: json['supplierId'] as String?,
       );
 }
 
@@ -136,6 +144,7 @@ class ProductInput {
     required this.sellingPrice,
     required this.minStock,
     this.maxStock,
+    this.supplierId,
   });
 
   final String sku;
@@ -149,6 +158,7 @@ class ProductInput {
   final double sellingPrice;
   final int minStock;
   final int? maxStock;
+  final String? supplierId;
 
   factory ProductInput.fromJson(Map<String, dynamic> json) => ProductInput(
         sku: json['sku'] as String,
@@ -162,6 +172,7 @@ class ProductInput {
         sellingPrice: (json['sellingPrice'] as num).toDouble(),
         minStock: (json['minStock'] as num).toInt(),
         maxStock: (json['maxStock'] as num?)?.toInt(),
+        supplierId: json['supplierId'] as String?,
       );
 
   /// A brand-new product as it looks locally before the server has it.
@@ -180,6 +191,7 @@ class ProductInput {
         maxStock: maxStock,
         currentStock: 0,
         status: 'active',
+        supplierId: supplierId,
         isPending: true,
       );
 
@@ -196,5 +208,6 @@ class ProductInput {
         'sellingPrice': sellingPrice,
         'minStock': minStock,
         'maxStock': maxStock,
+        'supplierId': supplierId,
       };
 }

@@ -13,6 +13,7 @@ import '../../../shared/widgets/toolbar_search_field.dart';
 import '../../auth/domain/permissions.dart';
 import '../../auth/presentation/auth_controller.dart';
 import '../../auth/presentation/permissions_provider.dart';
+import '../../parties/data/supplier_options.dart';
 import '../data/products_repository.dart';
 import '../domain/product.dart';
 import 'product_form_dialog.dart';
@@ -504,14 +505,18 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
   }
 }
 
-class _ProductCell extends StatelessWidget {
+class _ProductCell extends ConsumerWidget {
   const _ProductCell({required this.product});
 
   final Product product;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    final supplier = product.supplierId == null
+        ? null
+        : ref.watch(supplierOptionByIdProvider)[product.supplierId]?.label;
+    final subline = [?product.brand, ?supplier].join(' · ');
     return ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 260),
       child: Row(
@@ -549,9 +554,9 @@ class _ProductCell extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
-                if (product.brand != null)
+                if (subline.isNotEmpty)
                   Text(
-                    product.brand!,
+                    subline,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: theme.colorScheme.onSurface.withValues(alpha: 0.55),

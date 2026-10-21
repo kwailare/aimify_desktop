@@ -404,7 +404,9 @@ Header required: `Authorization: Bearer <token>`.
 ### `GET /api/v1/products`
 
 Every product for the organization. Archived products are hidden unless you
-add `?includeArchived=true`. No pagination yet.
+add `?includeArchived=true`. Add `?supplierId=<id>` for only the products
+linked to that supplier (the supplier's "products supplied"). No pagination
+yet.
 
 ### `POST /api/v1/products`
 
@@ -420,7 +422,8 @@ add `?includeArchived=true`. No pagination yet.
   "purchasePrice": 30000,
   "sellingPrice": 35000,
   "minStock": 5,
-  "maxStock": 200
+  "maxStock": 200,
+  "supplierId": "uuid"
 }
 ```
 
@@ -446,6 +449,7 @@ Only `sku` and `name` are required; `unit` defaults to `"piece"`, prices and
     "maxStock": 200,
     "currentStock": 0,
     "status": "active",
+    "supplierId": "uuid",
     "createdAt": "2026-09-22T19:21:17.660Z",
     "updatedAt": "2026-09-22T19:21:17.660Z"
   }
@@ -455,6 +459,14 @@ Only `sku` and `name` are required; `unit` defaults to `"piece"`, prices and
 Validation: prices must be non-negative numbers; `minStock`/`maxStock` must be
 non-negative whole numbers and `maxStock` can't be below `minStock`. `sku` is
 unique *within the organization* (`409` if reused).
+
+`supplierId` is the product's usual supplier, or `null` (the default). It must
+be an active supplier of the same organization, otherwise `400` with
+`"code": "invalid_supplier"`. If that supplier is archived later, the link
+stays and edits that keep it are still accepted; only *new* links to an
+archived supplier are refused. Supplier names for display come from
+`GET /api/v1/suppliers/options` below, so showing a product's supplier
+doesn't need `suppliers.view`.
 
 `currentStock` always starts at `0` and only ever changes through the
 movements endpoint below.
@@ -466,7 +478,8 @@ movements endpoint below.
 ### `PATCH /api/v1/products/{id}`
 
 Send any of `sku`, `name`, `barcode`, `description`, `brand`, `category`,
-`unit`, `purchasePrice`, `sellingPrice`, `minStock`, `maxStock`, `status`.
+`unit`, `purchasePrice`, `sellingPrice`, `minStock`, `maxStock`, `supplierId`,
+`status`.
 Same validation as create. `status` is `active`, `inactive` or `archived`.
 **`currentStock` can't be set here**, and sending only unknown fields is a
 `400`. `409` if the new `sku` belongs to another product.
@@ -605,8 +618,21 @@ The current picture for active products:
 
 Header required on all of these: `Authorization: Bearer <token>`. The two
 resources have the same shape, so they are described together; each has its
-own paths and permissions (`customers.read` / `customers.write`,
-`suppliers.read` / `suppliers.write`).
+own paths and permissions (`customers.view`, `.create`, `.edit`, `.archive`
+and the same for `suppliers`).
+
+### `GET /api/v1/suppliers/options`
+
+Every supplier's id, name and status (`active` or `archived`), sorted by
+name, for showing and picking a product's supplier. Open to anyone with
+`products.view` or `suppliers.view`; it never includes balances or contact
+details.
+
+```json
+{ "suppliers": [{ "id": "uuid", "name": "Dangote Foods Ltd", "status": "active" }] }
+```
+
+### Customer and supplier records
 
 - `GET /api/v1/customers` and `GET /api/v1/suppliers` return
   `{ "customers": [...] }` / `{ "suppliers": [...] }`, sorted by name, archived
@@ -806,8 +832,6 @@ website's Team page.
 
 - **No purchases, sales or expenses.** Stock, customers, suppliers and the
   credit ledger exist; these build on them.
-- **No supplier link on products yet.** The suppliers table now exists, so
-  this is possible; it hasn't been added to products.
 - **No per-warehouse stock balances.** `currentStock` is organization-wide on
   the product; movements record which warehouse they happened in, but stock
   isn't split by warehouse. This has to change before multiple warehouses are

@@ -39,6 +39,10 @@ class ApiConstants {
   static String customer(String id) => '$_v1/customers/$id';
   static const String suppliers = '$_v1/suppliers';
   static String supplier(String id) => '$_v1/suppliers/$id';
+
+  /// Supplier ids and names only — for showing and picking a product's
+  /// supplier without `suppliers.view`.
+  static const String supplierOptions = '$_v1/suppliers/options';
   static const String creditEntries = '$_v1/credit-entries';
 
   static const String movements = '$_v1/inventory/movements';

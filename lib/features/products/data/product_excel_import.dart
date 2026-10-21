@@ -1,5 +1,6 @@
 import 'package:excel/excel.dart';
 
+import '../../parties/data/supplier_options.dart';
 import '../domain/product.dart';
 
 /// One row successfully parsed from an imported spreadsheet, ready to become
@@ -9,6 +10,7 @@ class ImportedProductRow {
     required this.rowNumber,
     required this.input,
     required this.openingStock,
+    this.warning,
   });
 
   /// The spreadsheet row this came from (1-based, matching what a
@@ -20,6 +22,10 @@ class ImportedProductRow {
   /// created. Zero means "no opening stock" — the product is just created
   /// with nothing on hand yet.
   final int openingStock;
+
+  /// Something worth knowing that didn't stop the row importing — a
+  /// supplier name that matched none of the organization's suppliers.
+  final String? warning;
 }
 
 /// A row that failed validation — shown in the preview so it can be fixed in
@@ -63,6 +69,7 @@ const _headerSynonyms = <String, List<String>>{
   'minStock': ['minstock', 'reorderlevel', 'lowstockthreshold', 'threshold', 'reorderpoint'],
   'maxStock': ['maxstock', 'maximumstock', 'upperlimit'],
   'openingStock': ['openingstock', 'stock', 'quantity', 'qty', 'initialstock'],
+  'supplier': ['supplier', 'suppliername', 'vendor'],
 };
 
 const _requiredFields = ['sku', 'name'];
@@ -79,7 +86,11 @@ String _cellText(Data? cell) {
 /// import. Column order doesn't matter — headers are matched by name (see
 /// [_headerSynonyms]); unrecognized columns are ignored. Fully blank rows
 /// are skipped.
-ImportResult parseProductWorkbook(List<int> bytes) {
+///
+/// A `Supplier` column is matched by name (ignoring case and extra spaces)
+/// against [suppliers]; a name that matches none still imports the row,
+/// without a supplier, and says so in [ImportedProductRow.warning].
+ImportResult parseProductWorkbook(List<int> bytes, {List<SupplierOption> suppliers = const []}) {
   final Excel workbook;
   try {
     workbook = Excel.decodeBytes(bytes);
@@ -180,6 +191,12 @@ ImportResult parseProductWorkbook(List<int> bytes) {
     }
     final openingStock = parseWhole('openingStock', 'Opening stock', addMessage: true) ?? 0;
 
+    final supplierName = cellAt(row, 'supplier');
+    final supplier = matchSupplierByName(suppliers, supplierName);
+    final warning = supplierName.isNotEmpty && supplier == null
+        ? 'Supplier "$supplierName" not found, so imported without a supplier'
+        : null;
+
     if (messages.isNotEmpty) {
       invalidRows.add(ImportRowError(rowNumber: rowNumber, messages: messages, rawCells: rawCells));
       continue;
@@ -200,8 +217,10 @@ ImportResult parseProductWorkbook(List<int> bytes) {
           sellingPrice: sellingPrice,
           minStock: minStock,
           maxStock: maxStock,
+          supplierId: supplier?.id,
         ),
         openingStock: openingStock,
+        warning: warning,
       ),
     );
   }

@@ -7,6 +7,7 @@ import '../../../shared/widgets/status_pill.dart';
 import '../../auth/domain/permissions.dart';
 import '../../auth/presentation/auth_controller.dart';
 import '../../auth/presentation/permissions_provider.dart';
+import '../../products/data/products_repository.dart';
 import '../data/parties_repository.dart';
 import '../domain/party.dart';
 import 'credit_entry_dialog.dart';
@@ -60,6 +61,8 @@ class PartyHistoryDialog extends ConsumerWidget {
                 ],
               ],
             ),
+            if (!isCustomer && hasPermission(ref, Permissions.productsView))
+              _ProductsSupplied(supplierId: party.id),
             const SizedBox(height: 12),
             Flexible(
               child: ConstrainedBox(
@@ -158,6 +161,58 @@ class _EntryRow extends StatelessWidget {
               color: raised ? theme.colorScheme.error : const Color(0xFF2F8F5B),
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The products that list this supplier as their usual supplier.
+class _ProductsSupplied extends ConsumerWidget {
+  const _ProductsSupplied({required this.supplierId});
+
+  final String supplierId;
+
+  static const _shown = 12;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final products = ref.watch(productListProvider).where((p) => p.supplierId == supplierId).toList()
+      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+
+    return Padding(
+      key: const Key('products-supplied'),
+      padding: const EdgeInsets.only(top: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Products supplied (${products.length})',
+            style: theme.textTheme.bodySmall?.copyWith(
+              fontWeight: FontWeight.w700,
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+            ),
+          ),
+          const SizedBox(height: 6),
+          if (products.isEmpty)
+            Text(
+              'None yet. Pick this supplier on a product to link it.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.55),
+              ),
+            )
+          else
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final p in products.take(_shown))
+                  Chip(label: Text(p.name), visualDensity: VisualDensity.compact),
+                if (products.length > _shown)
+                  Chip(label: Text('+${products.length - _shown} more'), visualDensity: VisualDensity.compact),
+              ],
+            ),
         ],
       ),
     );

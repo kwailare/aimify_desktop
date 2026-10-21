@@ -10,6 +10,7 @@ import '../../auth/presentation/auth_controller.dart';
 import '../../sync/sync_engine.dart';
 import '../domain/party.dart';
 import 'party_overlay.dart';
+import 'supplier_options.dart';
 
 /// REAL `/api/v1/customers`, `/api/v1/suppliers` and `/api/v1/credit-entries`.
 ///
@@ -128,6 +129,8 @@ class PartiesNotifier extends FamilyAsyncNotifier<List<Party>, PartyType> {
   Future<void> refresh() async {
     if (!ref.read(canReadPartiesProvider(arg))) return;
     state = await AsyncValue.guard(() => ref.read(partiesRepositoryProvider).list(arg));
+    // Supplier names shown on products follow adds, renames and archiving.
+    if (arg == PartyType.supplier) unawaited(ref.read(supplierOptionsProvider.notifier).refresh());
   }
 
   SyncEngine get _sync => ref.read(syncEngineProvider.notifier);
