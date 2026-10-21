@@ -4,6 +4,7 @@ import 'package:aimify_desktop/features/parties/data/parties_repository.dart';
 import 'package:aimify_desktop/features/parties/data/supplier_options.dart';
 import 'package:aimify_desktop/features/parties/domain/party.dart';
 import 'package:aimify_desktop/features/products/data/catalog_repository.dart';
+import 'package:aimify_desktop/features/reports/data/valuation_report.dart';
 import 'package:aimify_desktop/features/products/data/products_repository.dart';
 import 'package:aimify_desktop/features/products/domain/product.dart';
 import 'package:aimify_desktop/features/warehouses/data/warehouses_repository.dart';
@@ -362,12 +363,37 @@ class FakeSupplierOptionsRepository implements SupplierOptionsRepository {
   }
 }
 
+class FakeValuationRepository implements ValuationRepository {
+  FakeValuationRepository([this.report]);
+
+  ValuationReport? report;
+
+  /// Every filter asked for, in order.
+  final List<ValuationFilter> requested = [];
+
+  @override
+  Future<ValuationReport> fetch(ValuationFilter filter) async {
+    requested.add(filter);
+    return report ??
+        ValuationReport(
+          asOf: DateTime(2026, 10, 21, 10),
+          totals: ValuationTotals.zero,
+          byProduct: const [],
+          byCategory: const [],
+          byWarehouse: const [],
+          negativeStockCount: 0,
+          noCostCount: 0,
+        );
+  }
+}
+
 List<Override> fakeDataOverrides({
   FakeProductsRepository? products,
   FakeWarehousesRepository? warehouses,
   FakeInventoryRepository? inventory,
   FakePartiesRepository? parties,
   FakeSupplierOptionsRepository? supplierOptions,
+  FakeValuationRepository? valuation,
   LocalStore? store,
 }) =>
     [
@@ -382,4 +408,5 @@ List<Override> fakeDataOverrides({
       partiesRepositoryProvider.overrideWithValue(parties ?? FakePartiesRepository()),
       catalogRepositoryProvider.overrideWithValue(FakeCatalogRepository()),
       supplierOptionsRepositoryProvider.overrideWithValue(supplierOptions ?? FakeSupplierOptionsRepository()),
+      valuationRepositoryProvider.overrideWithValue(valuation ?? FakeValuationRepository()),
     ];

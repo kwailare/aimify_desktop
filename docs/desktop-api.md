@@ -647,6 +647,57 @@ The current picture for active products:
 
 Each product includes `stockByWarehouse`.
 
+## Reports
+
+### `GET /api/v1/reports/valuation`
+
+Needs `products.view` and `stock.view`. What the organization's stock is
+worth right now: every warehouse balance priced at the product's **current**
+purchase price (`valueAtCost`) and selling price (`valueAtRetail`). Past
+purchase costs aren't recorded yet, so there is no average or FIFO cost.
+
+Optional `?warehouseId=<uuid>` and `?category=<name>` narrow every section,
+totals included (`?category=` with nothing after it means uncategorised).
+
+```json
+{
+  "asOf": "2026-10-21T10:00:00.000Z",
+  "basis": "current_purchase_price",
+  "filters": { "warehouseId": null, "category": null },
+  "totals": {
+    "products": 4, "units": 40,
+    "valueAtCost": 1042000, "valueAtRetail": 1129000,
+    "margin": 87000, "marginPercent": 7.71
+  },
+  "byProduct": [
+    {
+      "productId": "uuid", "sku": "RICE-50", "name": "Rice 50kg",
+      "category": "Grains", "unit": "bag", "quantity": 12,
+      "unitCost": 61000, "unitPrice": 65000,
+      "valueAtCost": 732000, "valueAtRetail": 780000, "margin": 48000,
+      "warehouses": [{ "warehouseId": "uuid", "quantity": 10 }, { "warehouseId": "uuid", "quantity": 2 }],
+      "flags": []
+    }
+  ],
+  "byCategory": [
+    { "category": "Grains", "products": 2, "units": 15, "valueAtCost": 822000, "valueAtRetail": 879000, "margin": 57000, "marginPercent": 6.48 }
+  ],
+  "byWarehouse": [
+    { "warehouseId": "uuid", "name": "Lagos", "status": "active", "products": 3, "units": 19, "valueAtCost": 730000, "valueAtRetail": 779000, "margin": 49000, "marginPercent": 6.29 }
+  ],
+  "warnings": { "negativeStock": 1, "noCost": 1 }
+}
+```
+
+Only products holding stock appear. `byProduct` is sorted by value at cost,
+highest first. `margin` is `valueAtRetail - valueAtCost`, and
+`marginPercent` is that as a share of `valueAtRetail` (`null` when there
+is nothing to sell). `flags` marks rows that make a valuation unreliable:
+`negative_stock` (some warehouse is below zero), `no_cost` (purchase price
+is 0) and `archived` (archived but still holding stock, still counted).
+`category: null` means uncategorised. Subtotals by category and by warehouse
+always add up to `totals`.
+
 ## Customers and suppliers
 
 Header required on all of these: `Authorization: Bearer <token>`. The two

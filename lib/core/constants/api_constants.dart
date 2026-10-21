@@ -47,6 +47,7 @@ class ApiConstants {
 
   static const String movements = '$_v1/inventory/movements';
   static const String stockAlerts = '$_v1/alerts/stock';
+  static const String valuationReport = '$_v1/reports/valuation';
 
   static const String team = '$_v1/team';
   static const String teamInvitations = '$_v1/team/invitations';

@@ -8,20 +8,30 @@ import '../../../shared/widgets/stat_card.dart';
 import '../../dashboard/data/dashboard_metrics.dart';
 import '../../inventory/data/inventory_repository.dart';
 import '../../products/data/products_repository.dart';
+import '../data/valuation_report.dart';
+import 'valuation_tab.dart';
 import 'widgets/movement_trend_chart.dart';
 import 'widgets/stock_health_chart.dart';
 import 'widgets/stock_value_chart.dart';
 import 'widgets/top_products_card.dart';
 
-/// Inventory reports computed from the live products and stock ledger.
-/// Valuation is current stock × price, worked out here — the backend has no
-/// valuation or reporting endpoint yet — and per-warehouse breakdowns and
-/// report exports aren't offered because stock isn't split by warehouse.
-class ReportsScreen extends ConsumerWidget {
+enum _ReportTab { overview, valuation }
+
+/// Inventory reports. Overview charts are worked out from the live products
+/// and stock ledger; the Valuation tab is the server's valuation report, by
+/// product, category or warehouse. Excel/PDF export comes later.
+class ReportsScreen extends ConsumerStatefulWidget {
   const ReportsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ReportsScreen> createState() => _ReportsScreenState();
+}
+
+class _ReportsScreenState extends ConsumerState<ReportsScreen> {
+  _ReportTab _tab = _ReportTab.overview;
+
+  @override
+  Widget build(BuildContext context) {
     final products = ref.watch(productsProvider);
     final cost = ref.watch(inventoryValueProvider);
     final retail = ref.watch(retailValueProvider);
@@ -44,14 +54,31 @@ class ReportsScreen extends ConsumerWidget {
                       ref.read(movementsProvider.notifier).refresh(),
                       ref.read(stockAlertsProvider.notifier).refresh(),
                     ]);
+                    ref.invalidate(valuationReportProvider);
                   },
                   icon: const Icon(Icons.refresh, size: 18),
                   label: const Text('Refresh'),
                 ),
               ],
             ),
+            const SizedBox(height: 16),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: SegmentedButton<_ReportTab>(
+                key: const Key('reports-tabs'),
+                showSelectedIcon: false,
+                segments: const [
+                  ButtonSegment(value: _ReportTab.overview, label: Text('Overview')),
+                  ButtonSegment(value: _ReportTab.valuation, label: Text('Valuation')),
+                ],
+                selected: {_tab},
+                onSelectionChanged: (s) => setState(() => _tab = s.first),
+              ),
+            ),
             const SizedBox(height: 20),
-            if (products.isLoading && !products.hasValue)
+            if (_tab == _ReportTab.valuation)
+              const ValuationTab()
+            else if (products.isLoading && !products.hasValue)
               const LoadingPanel(label: 'Loading reports…')
             else if (products.hasError && !products.hasValue)
               ErrorRetryCard(
