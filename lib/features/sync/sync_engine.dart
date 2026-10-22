@@ -15,6 +15,10 @@ import '../products/data/products_repository.dart';
 import '../parties/data/parties_repository.dart';
 import '../parties/domain/party.dart';
 import '../products/domain/product.dart';
+import '../purchases/data/purchases_repository.dart';
+import '../purchases/domain/purchase.dart';
+import '../reports/data/valuation_report.dart';
+import '../warehouses/data/warehouses_repository.dart';
 
 /// The outcome of [SyncEngine.submit]: either the server took the change
 /// right away ([value] is its answer) or it was saved on this computer to
@@ -186,8 +190,11 @@ class SyncEngine extends Notifier<SyncState> {
           ref.read(stockAlertsProvider.notifier).refresh(),
           ref.read(partiesProvider(PartyType.customer).notifier).refresh(),
           ref.read(partiesProvider(PartyType.supplier).notifier).refresh(),
+          ref.read(purchasesProvider.notifier).refresh(),
+          ref.read(warehousesProvider.notifier).refresh(),
           ref.read(authControllerProvider.notifier).refresh(),
         ]);
+        ref.invalidate(valuationReportProvider);
         // Ledgers re-read themselves next time they are shown.
         ref.invalidate(creditEntriesProvider);
       }
@@ -279,6 +286,13 @@ class SyncEngine extends Notifier<SyncState> {
           note: op.payload['note'] as String?,
           clientRef: op.id,
         );
+
+      case OpKind.purchaseCreate:
+        final input = PurchaseInput.fromJson(Map<String, dynamic>.from(op.payload['input'] as Map))
+            .resolved((id) => _resolve(id, idMap));
+        // The op id is the clientRef: a purchase that already landed is
+        // returned instead of recorded twice, so no check is needed.
+        await ref.read(purchasesRepositoryProvider).create(input, clientRef: op.id);
 
       case OpKind.movement:
         final productId = _resolve(op.payload['productId'] as String, idMap);

@@ -8,6 +8,9 @@ import '../../auth/domain/permissions.dart';
 import '../../auth/presentation/auth_controller.dart';
 import '../../auth/presentation/permissions_provider.dart';
 import '../../products/data/products_repository.dart';
+import '../../purchases/data/purchases_repository.dart';
+import '../../purchases/presentation/purchase_detail_dialog.dart';
+import '../../purchases/presentation/purchase_form_dialog.dart';
 import '../data/parties_repository.dart';
 import '../domain/party.dart';
 import 'credit_entry_dialog.dart';
@@ -63,6 +66,8 @@ class PartyHistoryDialog extends ConsumerWidget {
             ),
             if (!isCustomer && hasPermission(ref, Permissions.productsView))
               _ProductsSupplied(supplierId: party.id),
+            if (!isCustomer && hasPermission(ref, Permissions.purchasesView))
+              _SupplierPurchases(supplierId: party.id),
             const SizedBox(height: 12),
             Flexible(
               child: ConstrainedBox(
@@ -213,6 +218,78 @@ class _ProductsSupplied extends ConsumerWidget {
                   Chip(label: Text('+${products.length - _shown} more'), visualDensity: VisualDensity.compact),
               ],
             ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The supplier's purchases, newest first, with what is still owed on each.
+class _SupplierPurchases extends ConsumerWidget {
+  const _SupplierPurchases({required this.supplierId});
+
+  final String supplierId;
+
+  static const _shown = 6;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final purchases = ref.watch(supplierPurchasesProvider(supplierId));
+    final canCreate = hasPermission(ref, Permissions.purchasesCreate);
+    final muted = theme.colorScheme.onSurface.withValues(alpha: 0.55);
+
+    return Padding(
+      key: const Key('supplier-purchases'),
+      padding: const EdgeInsets.only(top: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Purchases (${purchases.length})',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                  ),
+                ),
+              ),
+              if (canCreate)
+                TextButton.icon(
+                  key: const Key('supplier-new-purchase'),
+                  onPressed: () => showDialog(
+                    context: context,
+                    builder: (_) => PurchaseFormDialog(initialSupplierId: supplierId),
+                  ),
+                  icon: const Icon(Icons.add, size: 16),
+                  label: const Text('New purchase'),
+                ),
+            ],
+          ),
+          if (purchases.isEmpty)
+            Text('None yet.', style: theme.textTheme.bodySmall?.copyWith(color: muted))
+          else
+            for (final p in purchases.take(_shown))
+              InkWell(
+                onTap: () => showDialog(context: context, builder: (_) => PurchaseDetailDialog(purchaseId: p.id)),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
+                    children: [
+                      SizedBox(width: 72, child: Text(p.reference, style: const TextStyle(fontWeight: FontWeight.w600))),
+                      Expanded(child: Text(dateFormat.format(p.orderDate), style: theme.textTheme.bodySmall)),
+                      purchaseStatusPill(p.status),
+                      const SizedBox(width: 8),
+                      SizedBox(width: 110, child: Text(currencyFormat.format(p.total), textAlign: TextAlign.end)),
+                    ],
+                  ),
+                ),
+              ),
+          if (purchases.length > _shown)
+            Text('+${purchases.length - _shown} more on the Purchases screen',
+                style: theme.textTheme.bodySmall?.copyWith(color: muted)),
         ],
       ),
     );

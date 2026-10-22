@@ -59,6 +59,18 @@ class Permissions {
   /// also requires view of that customer or supplier).
   static const creditRecord = 'credit.record';
 
+  /// See purchases (Owner, Administrator, Warehouse Manager, Accountant).
+  static const purchasesView = 'purchases.view';
+
+  /// Record purchases and edit them while nothing has been received.
+  static const purchasesCreate = 'purchases.create';
+
+  /// Receive deliveries, which adds stock.
+  static const purchasesReceive = 'purchases.receive';
+
+  /// Cancel a purchase nothing was received on.
+  static const purchasesCancel = 'purchases.cancel';
+
   /// List the team and invite people (Owner, Administrator; not editable).
   static const teamManage = 'team.manage';
 

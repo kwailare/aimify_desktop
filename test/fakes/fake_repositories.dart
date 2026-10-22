@@ -4,6 +4,8 @@ import 'package:aimify_desktop/features/parties/data/parties_repository.dart';
 import 'package:aimify_desktop/features/parties/data/supplier_options.dart';
 import 'package:aimify_desktop/features/parties/domain/party.dart';
 import 'package:aimify_desktop/features/products/data/catalog_repository.dart';
+import 'package:aimify_desktop/features/purchases/data/purchases_repository.dart';
+import 'package:aimify_desktop/features/purchases/domain/purchase.dart';
 import 'package:aimify_desktop/features/reports/data/valuation_report.dart';
 import 'package:aimify_desktop/features/products/data/products_repository.dart';
 import 'package:aimify_desktop/features/products/domain/product.dart';
@@ -387,6 +389,135 @@ class FakeValuationRepository implements ValuationRepository {
   }
 }
 
+class FakePurchasesRepository implements PurchasesRepository {
+  FakePurchasesRepository([List<Purchase>? purchases]) : purchases = purchases ?? [];
+
+  List<Purchase> purchases;
+
+  /// Every create sent, with its clientRef.
+  final List<({PurchaseInput input, String? clientRef})> created = [];
+  final List<({String id, Map<String, int>? lines})> received = [];
+  final List<({String id, double amount})> paid = [];
+  final List<String> cancelled = [];
+  final List<({String id, Map<String, dynamic> changes})> updated = [];
+
+  /// Thrown by the next write when set (a refusal or a network failure).
+  Object? writeError;
+
+  void _maybeFail() {
+    final error = writeError;
+    if (error != null) throw error;
+  }
+
+  Purchase _find(String id) => purchases.firstWhere((p) => p.id == id);
+
+  @override
+  Future<List<Purchase>> list() async => List.of(purchases);
+
+  @override
+  Future<Purchase> get(String id) async => _find(id);
+
+  @override
+  Future<Purchase> create(PurchaseInput input, {String? clientRef}) async {
+    _maybeFail();
+    created.add((input: input, clientRef: clientRef));
+    final purchase = fixturePurchase(
+      'srv${created.length}',
+      supplierId: input.supplierId,
+      warehouseId: input.warehouseId,
+      status: input.receive
+          ? PurchaseStatus.received
+          : (input.placeOrder ? PurchaseStatus.pending : PurchaseStatus.draft),
+      lines: [
+        for (var i = 0; i < input.lines.length; i++)
+          (
+            productId: input.lines[i].productId,
+            quantity: input.lines[i].quantity,
+            unitCost: input.lines[i].unitCost,
+            received: input.receive ? input.lines[i].quantity : 0,
+          ),
+      ],
+      amountPaid: input.amountPaid,
+    );
+    purchases = [purchase, ...purchases];
+    return purchase;
+  }
+
+  @override
+  Future<Purchase> update(String id, Map<String, dynamic> changes) async {
+    _maybeFail();
+    updated.add((id: id, changes: changes));
+    return _find(id);
+  }
+
+  @override
+  Future<ReceiveOutcome> receive(String id, {Map<String, int>? lines}) async {
+    _maybeFail();
+    received.add((id: id, lines: lines));
+    return ReceiveOutcome(purchase: _find(id), priceChanges: const []);
+  }
+
+  @override
+  Future<Purchase> pay(String id, {required double amount, String? note}) async {
+    _maybeFail();
+    paid.add((id: id, amount: amount));
+    return _find(id);
+  }
+
+  @override
+  Future<({Purchase purchase, double refundOwed})> cancel(String id) async {
+    _maybeFail();
+    cancelled.add(id);
+    return (purchase: _find(id), refundOwed: _find(id).amountPaid);
+  }
+}
+
+/// A purchase as the server would return it.
+Purchase fixturePurchase(
+  String id, {
+  String reference = 'PO-0001',
+  String supplierId = 's1',
+  String supplierName = 'Dangote Foods',
+  String warehouseId = 'w1',
+  String warehouseName = 'Main Warehouse',
+  PurchaseStatus status = PurchaseStatus.pending,
+  List<({String productId, int quantity, double unitCost, int received})>? lines,
+  double amountPaid = 0,
+  DateTime? postedAt,
+}) {
+  final rows = lines ?? [(productId: '1', quantity: 10, unitCost: 100.0, received: 0)];
+  final total = rows.fold(0.0, (s, l) => s + l.quantity * l.unitCost);
+  return Purchase(
+    id: id,
+    reference: reference,
+    supplierId: supplierId,
+    supplierName: supplierName,
+    warehouseId: warehouseId,
+    warehouseName: warehouseName,
+    status: status,
+    orderDate: DateTime(2026, 10, 20),
+    subtotal: total,
+    discount: 0,
+    tax: 0,
+    total: total,
+    amountPaid: amountPaid,
+    postedAt: postedAt ?? (rows.any((l) => l.received > 0) ? DateTime(2026, 10, 21) : null),
+    lines: [
+      for (var i = 0; i < rows.length; i++)
+        PurchaseLine(
+          id: '$id-l$i',
+          productId: rows[i].productId,
+          productName: 'Product ${rows[i].productId}',
+          sku: 'SKU-${rows[i].productId}',
+          unit: 'bag',
+          quantity: rows[i].quantity,
+          unitCost: rows[i].unitCost,
+          receivedQuantity: rows[i].received,
+        ),
+    ],
+  );
+}
+
 List<Override> fakeDataOverrides({
   FakeProductsRepository? products,
   FakeWarehousesRepository? warehouses,
@@ -394,6 +525,7 @@ List<Override> fakeDataOverrides({
   FakePartiesRepository? parties,
   FakeSupplierOptionsRepository? supplierOptions,
   FakeValuationRepository? valuation,
+  FakePurchasesRepository? purchases,
   LocalStore? store,
 }) =>
     [
@@ -409,4 +541,5 @@ List<Override> fakeDataOverrides({
       catalogRepositoryProvider.overrideWithValue(FakeCatalogRepository()),
       supplierOptionsRepositoryProvider.overrideWithValue(supplierOptions ?? FakeSupplierOptionsRepository()),
       valuationRepositoryProvider.overrideWithValue(valuation ?? FakeValuationRepository()),
+      purchasesRepositoryProvider.overrideWithValue(purchases ?? FakePurchasesRepository()),
     ];

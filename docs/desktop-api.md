@@ -100,6 +100,10 @@ up whenever it re-reads `/me` (after any `402`/`403`, and on refresh).
 | Suppliers | `suppliers.view` | List and read suppliers and their credit ledger | Owner, Administrator, Warehouse Manager, Accountant / Finance |
 | | `suppliers.create` / `.edit` / `.archive` | Add, edit, archive or restore | Owner, Administrator, Warehouse Manager |
 | Credit ledger | `credit.record` | Record charges, payments and adjustments (also needs view of that customer or supplier) | Owner, Administrator, Accountant / Finance |
+| Purchases | `purchases.view` | List and read purchases | Owner, Administrator, Warehouse Manager, Accountant / Finance |
+| | `purchases.create` | Record a purchase and edit it while nothing is received | Owner, Administrator, Warehouse Manager |
+| | `purchases.receive` | Receive deliveries (adds stock) | Owner, Administrator, Warehouse Manager |
+| | `purchases.cancel` | Cancel a purchase nothing was received on | Owner, Administrator, Warehouse Manager |
 | Fixed | `team.manage` | List the team and invite people | Owner, Administrator (not editable) |
 | | `setup.complete` | Mark the guided setup as finished | Owner, Administrator (not editable) |
 
@@ -107,7 +111,8 @@ Some permissions bring others with them, because the action can't work
 without them: every action includes its module's `view`; `stock.in`,
 `stock.out` and `stock.adjust` include `products.view` and `warehouses.view`
 (a movement picks both); `products.create` and `products.edit` include
-`catalog.view`. The grid editor applies the same rule, so a saved grid is
+`catalog.view`; `purchases.create` and `purchases.receive` include
+`products.view` and `warehouses.view`. The grid editor applies the same rule, so a saved grid is
 always consistent.
 
 An update that changes `status` (archive, restore, disable, re-enable) needs
@@ -647,6 +652,134 @@ The current picture for active products:
 
 Each product includes `stockByWarehouse`.
 
+## Purchases
+
+Header required: `Authorization: Bearer <token>`. A purchase buys products
+from one supplier into one warehouse. Numbers are per organization
+(`PO-0001`, `PO-0002`, ...).
+
+Statuses: `draft` (being prepared, editable), `pending` (ordered, waiting
+for delivery, still editable), `partially_received`, `received`, and
+`cancelled`. Receiving is allowed from draft, pending or partially received.
+
+What receiving does, in one all-or-nothing database step:
+
+- adds each received quantity to that warehouse's stock (a `stock_in`
+  movement with reason "Received on PO-0001" and `purchaseId` set);
+- sets each product's `purchasePrice` to the unit cost just received (the
+  change is in the product's audit history);
+- on the **first** receipt only, puts the whole purchase `total` on the
+  supplier's credit ledger as a `charge`, and anything already paid as a
+  `payment` (both entries carry `purchaseId`). Later payments on the
+  purchase go to the ledger as they're made.
+
+### The purchase object
+
+```json
+{
+  "id": "uuid", "number": 1, "reference": "PO-0001",
+  "supplierId": "uuid", "supplierName": "Dangote Foods Ltd",
+  "warehouseId": "uuid", "warehouseName": "Lagos Main",
+  "status": "partially_received",
+  "orderDate": "2026-10-22T09:00:00.000Z", "expectedDate": null, "notes": "Monthly order",
+  "subtotal": 660000, "discount": 10000, "tax": 5000, "total": 655000,
+  "amountPaid": 100000, "balance": 555000, "paymentStatus": "partial",
+  "postedAt": "2026-10-22T10:00:00.000Z", "receivedAt": null, "cancelledAt": null,
+  "createdBy": "uuid", "createdByName": "Ada Obi",
+  "createdAt": "...", "updatedAt": "...",
+  "unitsOrdered": 50, "unitsReceived": 4,
+  "lines": [
+    {
+      "id": "uuid", "productId": "uuid", "productName": "Rice 50kg", "sku": "RICE-50", "unit": "bag",
+      "quantity": 10, "unitCost": 62000, "lineTotal": 620000, "receivedQuantity": 4
+    }
+  ]
+}
+```
+
+`total = subtotal - discount + tax`; `paymentStatus` is `unpaid`, `partial`
+or `paid`. `postedAt` is when the purchase reached the supplier's account
+(its first receipt).
+
+### `GET /api/v1/purchases`
+
+Needs `purchases.view`. Newest first, with lines. Filters: `?status=` (one
+status, or `open` for draft + pending + partially received),
+`?supplierId=`, `?warehouseId=`, `?limit=` (default 100, max 200).
+
+### `GET /api/v1/purchases/{id}`
+
+The purchase plus `receipts` (`[{ id, createdAt, userName, lines: [{ productId,
+quantity }] }]`) and `payments` (`[{ id, amount, note, createdAt, userName }]`).
+
+### `POST /api/v1/purchases`
+
+Needs `purchases.create`.
+
+```json
+{
+  "supplierId": "uuid",
+  "warehouseId": "uuid",
+  "lines": [{ "productId": "uuid", "quantity": 10, "unitCost": 61000 }],
+  "status": "pending",
+  "orderDate": "2026-10-22",
+  "expectedDate": "2026-10-29",
+  "notes": "optional",
+  "discount": 10000,
+  "tax": 5000,
+  "amountPaid": 0,
+  "receive": false,
+  "clientRef": "optional, makes a retry harmless"
+}
+```
+
+Required: `supplierId` (an active supplier), `warehouseId` (an active
+warehouse) and at least one line (a product that isn't archived, a whole
+quantity above 0, a unit cost of 0 or more). `status` is `draft` (default)
+or `pending`. `amountPaid` above 0 also needs `credit.record` and can't
+exceed the total. `"receive": true` (needs `purchases.receive`) receives
+everything straight away, for goods bought and collected on the spot. The
+same `clientRef` again returns the purchase already recorded with
+`"duplicate": true`. `201` with `{ "purchase": { ... } }`.
+
+Errors: `400` with `code` `invalid_supplier`, `invalid_warehouse`,
+`invalid_product` or `overpayment`, or a validation message; `403`
+`forbidden_role`.
+
+### `PATCH /api/v1/purchases/{id}`
+
+Needs `purchases.create`. Any of `supplierId`, `warehouseId`, `status`
+(`draft` or `pending`, i.e. place or un-place the order), `orderDate`,
+`expectedDate`, `notes`, `discount`, `tax`, `lines` (replaces all
+lines). Only while it's draft or pending and nothing has been received;
+otherwise `409` `purchase_locked`. The total can't drop below what has
+already been paid (`409` `overpayment`).
+
+### `POST /api/v1/purchases/{id}/receive`
+
+Needs `purchases.receive`. `{ "lines": [{ "lineId": "uuid", "quantity": 4 }] }`
+for what arrived, or `{ "all": true }` for everything outstanding; optional
+`clientRef`. Returns `{ purchase, priceChanges: [{ productId, previous, new }],
+duplicate }`. Errors (`409` unless noted): `over_receipt` (more than is
+outstanding; includes `lineId` and `remaining`), `purchase_not_receivable`
+(received or cancelled), `warehouse_inactive`, `line_not_found` (`400`),
+`invalid_quantity` (`400`). Two people receiving the same purchase at the
+same moment can't over-receive it: the second is checked against what the
+first left.
+
+### `POST /api/v1/purchases/{id}/payments`
+
+Needs `purchases.view` and `credit.record`. `{ "amount": 555000, "note":
+"Bank transfer", "clientRef": "optional" }`. `201` with `{ purchase }`.
+`409` `overpayment` (includes `remaining`) or `purchase_cancelled`.
+
+### `POST /api/v1/purchases/{id}/cancel`
+
+Needs `purchases.cancel`. Only a draft or pending purchase with nothing
+received (`409` `purchase_not_cancellable` otherwise). If money was paid on
+it, that amount goes on the supplier's account as a negative `adjustment`
+(the supplier owes it back), and the response's `refundOwed` says how much.
+
 ## Reports
 
 ### `GET /api/v1/reports/valuation`
@@ -914,8 +1047,8 @@ website's Team page.
 
 ## What this API does *not* do yet
 
-- **No purchases, sales or expenses.** Stock, customers, suppliers and the
-  credit ledger exist; these build on them.
+- **No sales or expenses yet.** Purchases, stock, customers, suppliers and
+  the credit ledger exist; these build on them.
 - **No stock transfers between warehouses yet.** Moving stock means a stock
   out in one warehouse and a stock in to the other.
 - **Plan limits are configured by the Aimify team.** The default plan allows

@@ -7,6 +7,7 @@ import '../inventory/domain/stock_movement.dart';
 import '../parties/data/parties_repository.dart';
 import '../parties/domain/party.dart';
 import '../products/data/products_repository.dart';
+import '../purchases/domain/purchase.dart';
 import 'sync_engine.dart';
 
 /// Everything saved on this computer that hasn't reached the server yet —
@@ -93,6 +94,10 @@ String describeOp(OutboxOp op, Map<String, String> productNames) {
       final amount = (op.payload['amount'] as num).toDouble();
       return '${kind.label} ${currencyFormat.format(signedCreditAmount(kind, amount).abs())} · '
           '${product(op.payload['partyId'] as String?)}';
+    case OpKind.purchaseCreate:
+      final input = PurchaseInput.fromJson(Map<String, dynamic>.from(op.payload['input'] as Map));
+      return '${input.receive ? 'Purchase received' : 'New purchase'} · '
+          '${input.lines.length} line${input.lines.length == 1 ? '' : 's'} · ${currencyFormat.format(input.total)}';
   }
 }
 

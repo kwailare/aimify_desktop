@@ -46,19 +46,19 @@ const _viewPermission = {
   AppScreen.suppliers: Permissions.suppliersView,
   AppScreen.customers: Permissions.customersView,
   AppScreen.warehouses: Permissions.warehousesView,
+  AppScreen.purchases: Permissions.purchasesView,
 };
 
-/// Purchases, Expenses and Reports have no backend permissions yet (purchases
-/// and expenses are saved on this computer only), so they keep the fixed
-/// role rules they had before the permission grid, until those modules move
-/// to the server.
+/// Expenses and Reports have no backend permissions yet (expenses are saved
+/// on this computer only), so they keep the fixed role rules they had before
+/// the permission grid, until those modules move to the server.
 const _localScreensByRole = <String, Set<AppScreen>>{
-  'Owner': {AppScreen.purchases, AppScreen.expenses, AppScreen.reports},
-  'Administrator': {AppScreen.purchases, AppScreen.expenses, AppScreen.reports},
-  'Warehouse Manager': {AppScreen.purchases, AppScreen.reports},
+  'Owner': {AppScreen.expenses, AppScreen.reports},
+  'Administrator': {AppScreen.expenses, AppScreen.reports},
+  'Warehouse Manager': {AppScreen.reports},
   'Inventory Staff': {AppScreen.reports},
   'Sales Staff': {},
-  'Accountant / Finance': {AppScreen.purchases, AppScreen.expenses, AppScreen.reports},
+  'Accountant / Finance': {AppScreen.expenses, AppScreen.reports},
 };
 
 /// True if someone with [role] and [permissions] should see [screen] at all.
@@ -72,7 +72,6 @@ bool isScreenVisible(String? role, List<String> permissions, AppScreen screen) {
     case AppScreen.creditsDebts:
       return permissions.contains(Permissions.customersView) ||
           permissions.contains(Permissions.suppliersView);
-    case AppScreen.purchases:
     case AppScreen.expenses:
     case AppScreen.reports:
       return _localScreensByRole[role]?.contains(screen) ?? false;

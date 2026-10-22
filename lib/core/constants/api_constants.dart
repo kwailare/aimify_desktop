@@ -48,6 +48,11 @@ class ApiConstants {
   static const String movements = '$_v1/inventory/movements';
   static const String stockAlerts = '$_v1/alerts/stock';
   static const String valuationReport = '$_v1/reports/valuation';
+  static const String purchases = '$_v1/purchases';
+  static String purchase(String id) => '$_v1/purchases/$id';
+  static String purchaseReceive(String id) => '$_v1/purchases/$id/receive';
+  static String purchasePayments(String id) => '$_v1/purchases/$id/payments';
+  static String purchaseCancel(String id) => '$_v1/purchases/$id/cancel';
 
   static const String team = '$_v1/team';
   static const String teamInvitations = '$_v1/team/invitations';

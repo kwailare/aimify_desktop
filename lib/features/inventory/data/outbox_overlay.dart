@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../shared/offline/outbox.dart';
 import '../../products/data/products_repository.dart';
 import '../../products/domain/product.dart';
+import '../../purchases/domain/purchase.dart';
 import '../domain/stock_movement.dart';
 
 /// What the screens should show: the last data from the server with every
@@ -52,6 +53,14 @@ OutboxView overlayOutbox(List<Product> base, List<OutboxOp> ops) {
       case OpKind.partyArchive:
       case OpKind.creditEntry:
         break;
+      case OpKind.purchaseCreate:
+        // Bought and received while offline: the stock shows at once.
+        final input = PurchaseInput.fromJson(Map<String, dynamic>.from(op.payload['input'] as Map));
+        if (!input.receive) break;
+        for (final line in input.lines) {
+          final i = indexOf(line.productId);
+          if (i >= 0) products[i] = products[i].withMovement(input.warehouseId, line.quantity);
+        }
       case OpKind.movement:
         final productId = op.payload['productId'] as String;
         final warehouseId = op.payload['warehouseId'] as String;

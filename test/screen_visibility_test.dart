@@ -116,9 +116,16 @@ void main() {
       expect(isScreenVisible('Sales Staff', ['products.view'], AppScreen.creditsDebts), isFalse);
     });
 
-    test('local-only screens keep their role rules regardless of the grid', () {
-      expect(isScreenVisible('Sales Staff', defaultPermissionsFor('Owner'), AppScreen.purchases), isFalse);
+    test('local-only screens (Expenses, Reports) keep their role rules regardless of the grid', () {
+      expect(isScreenVisible('Sales Staff', defaultPermissionsFor('Owner'), AppScreen.expenses), isFalse);
       expect(isScreenVisible('Accountant / Finance', const [], AppScreen.expenses), isTrue);
+    });
+
+    test('Purchases follows purchases.view, like the other server-backed screens', () {
+      expect(isScreenVisible('Sales Staff', const ['purchases.view'], AppScreen.purchases), isTrue);
+      expect(isScreenVisible('Owner', const ['products.view'], AppScreen.purchases), isFalse);
+      expect(_visible('Sales Staff', defaultPermissionsFor('Sales Staff')), isNot(contains(AppScreen.purchases)));
+      expect(_visible('Accountant / Finance', defaultPermissionsFor('Accountant / Finance')), contains(AppScreen.purchases));
     });
 
     test('dashboard is always visible; nothing else without permissions', () {
