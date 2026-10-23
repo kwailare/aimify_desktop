@@ -901,10 +901,16 @@ atomic update, not a separate read, so it holds even under real concurrency.
 
 ### `GET /api/v1/credit-entries`
 
-Newest first, up to `?limit=` (default 100, max 200). Filter with
+Newest first, up to `?limit=` (default 100, max 1000). Filter with
 `?partyType=customer|supplier` and `?partyId=<uuid>`. Without a `partyType` you
 get the ledgers your role may read (a Sales Staff member sees only the customer
 ledger); asking for a type you can't read is a `403`.
+
+For statements, `?from=` and `?to=` (ISO dates or date-times) limit the
+entries to that period: `from` inclusive, `to` exclusive. With a `partyType`,
+a `partyId` and a `from`, the response also has `openingBalance`: what was
+owed before `from`, so the opening balance plus the period's entries is the
+balance at the end of the period. `400` if a date can't be read.
 
 ### `POST /api/v1/credit-entries`
 

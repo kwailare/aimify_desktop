@@ -7,6 +7,7 @@ import '../../../shared/widgets/status_pill.dart';
 import '../../auth/domain/permissions.dart';
 import '../../auth/presentation/auth_controller.dart';
 import '../../auth/presentation/permissions_provider.dart';
+import '../../documents/statement_dialog.dart';
 import '../../products/data/products_repository.dart';
 import '../../purchases/data/purchases_repository.dart';
 import '../../purchases/presentation/purchase_detail_dialog.dart';
@@ -98,6 +99,13 @@ class PartyHistoryDialog extends ConsumerWidget {
       ),
       actions: [
         TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Close')),
+        if (!isCustomer && !live.isPending)
+          TextButton.icon(
+            key: const Key('supplier-statement'),
+            onPressed: () => showDialog(context: context, builder: (_) => StatementDialog(party: live)),
+            icon: const Icon(Icons.description_outlined, size: 18),
+            label: const Text('Statement'),
+          ),
         if (canRecord) ...[
           TextButton(onPressed: () => open(CreditKind.adjustment), child: const Text('Adjust')),
           OutlinedButton(

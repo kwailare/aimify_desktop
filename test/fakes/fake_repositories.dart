@@ -306,6 +306,28 @@ class FakePartiesRepository implements PartiesRepository {
   Future<List<CreditEntry>> entries(PartyType type, String partyId) async =>
       ledger.where((e) => e.partyId == partyId).toList().reversed.toList();
 
+  /// Every period asked for, in order.
+  final List<({DateTime? from, DateTime to})> statementRequests = [];
+
+  @override
+  Future<({List<CreditEntry> entries, double openingBalance})> ledgerForPeriod(
+    PartyType type,
+    String partyId, {
+    DateTime? from,
+    required DateTime to,
+  }) async {
+    statementRequests.add((from: from, to: to));
+    final mine = ledger.where((e) => e.partyId == partyId);
+    return (
+      entries: mine
+          .where((e) => (from == null || !e.createdAt.isBefore(from)) && e.createdAt.isBefore(to))
+          .toList(),
+      openingBalance: from == null
+          ? 0.0
+          : mine.where((e) => e.createdAt.isBefore(from)).fold(0.0, (sum, e) => sum + e.amount),
+    );
+  }
+
   @override
   Future<({CreditEntry entry, double balanceOwed})> recordEntry({
     required PartyType partyType,

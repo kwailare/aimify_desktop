@@ -59,6 +59,32 @@ class PartiesRepository {
   }
 
   /// One party's ledger, newest first. Falls back to the saved copy offline.
+  /// Everything on a party's ledger from [from] (or the beginning) up to
+  /// [to], with what was owed before [from] — for statements. Always read
+  /// from the server, never a saved copy, so a printed statement is exact.
+  Future<({List<CreditEntry> entries, double openingBalance})> ledgerForPeriod(
+    PartyType type,
+    String partyId, {
+    DateTime? from,
+    required DateTime to,
+  }) async {
+    final query = [
+      'partyType=${type.apiValue}',
+      'partyId=$partyId',
+      'limit=1000',
+      if (from != null) 'from=${Uri.encodeQueryComponent(from.toUtc().toIso8601String())}',
+      'to=${Uri.encodeQueryComponent(to.toUtc().toIso8601String())}',
+    ].join('&');
+    final json = await _api.get('${ApiConstants.creditEntries}?$query');
+    return (
+      entries: [
+        for (final row in (json['entries'] as List<dynamic>? ?? const []))
+          CreditEntry.fromJson(row as Map<String, dynamic>),
+      ],
+      openingBalance: (json['openingBalance'] as num?)?.toDouble() ?? 0,
+    );
+  }
+
   Future<List<CreditEntry>> entries(PartyType type, String partyId) async {
     final json = await _api.get(
       '${ApiConstants.creditEntries}?partyType=${type.apiValue}&partyId=$partyId&limit=200',

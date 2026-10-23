@@ -11,6 +11,12 @@ import '../../auth/presentation/permissions_provider.dart';
 import '../../products/data/products_repository.dart';
 import '../data/purchases_repository.dart';
 import '../domain/purchase.dart';
+import '../../documents/document_preview.dart';
+import '../../documents/purchase_documents.dart';
+import '../../parties/data/parties_repository.dart';
+import '../../parties/domain/party.dart';
+import '../../warehouses/data/warehouses_repository.dart';
+import '../../warehouses/domain/warehouse.dart';
 import 'purchase_form_dialog.dart';
 
 StatusPill purchaseStatusPill(PurchaseStatus status) => StatusPill(
@@ -92,6 +98,24 @@ class PurchaseDetailDialog extends ConsumerWidget {
     } catch (e) {
       if (context.mounted) showErrorSnack(context, e);
     }
+  }
+
+  void _print(
+    BuildContext context,
+    WidgetRef ref,
+    Purchase p, {
+    required String title,
+    required String fileName,
+    required DocumentBuilder Function(Party? supplier, Warehouse? warehouse) build,
+  }) {
+    final supplier = ref
+        .read(partyListProvider(PartyType.supplier))
+        .where((s) => s.id == p.supplierId)
+        .firstOrNull;
+    final warehouse = ref.read(warehouseListProvider).where((w) => w.id == p.warehouseId).firstOrNull;
+    ref
+        .read(documentOpenerProvider)
+        .open(context, ref, title: title, fileName: fileName, build: build(supplier, warehouse));
   }
 
   @override
@@ -250,13 +274,30 @@ class PurchaseDetailDialog extends ConsumerWidget {
                       'Deliveries',
                       style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
                     ),
-                    for (final r in p.receipts)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Text(
-                          '${dateTimeFormat.format(r.createdAt)}${r.userName == null ? '' : ' · ${r.userName}'} — '
-                          '${r.lines.map((l) => '${l.quantity} ${productName[l.productId] ?? 'units'}').join(', ')}',
-                        ),
+                    for (final (i, r) in p.receipts.indexed)
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              '${dateTimeFormat.format(r.createdAt)}${r.userName == null ? '' : ' · ${r.userName}'} — '
+                              '${r.lines.map((l) => '${l.quantity} ${productName[l.productId] ?? 'units'}').join(', ')}',
+                            ),
+                          ),
+                          IconButton(
+                            key: Key('print-grn-$i'),
+                            tooltip: 'Goods received note (PDF)',
+                            icon: const Icon(Icons.print_outlined, size: 18),
+                            onPressed: () => _print(
+                              context,
+                              ref,
+                              p,
+                              title: 'Goods received note ${p.reference}-GRN-${i + 1}',
+                              fileName: '${p.reference}-GRN-${i + 1}.pdf',
+                              build: (supplier, warehouse) => (kit) =>
+                                  buildGoodsReceivedNote(kit, p, i, supplier: supplier, warehouse: warehouse),
+                            ),
+                          ),
+                        ],
                       ),
                   ],
                   if (p.payments.isNotEmpty) ...[
@@ -265,13 +306,29 @@ class PurchaseDetailDialog extends ConsumerWidget {
                       'Payments',
                       style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
                     ),
-                    for (final pay in p.payments)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Text(
-                          '${dateTimeFormat.format(pay.createdAt)} — ${currencyFormat.format(pay.amount)}'
-                          '${pay.note == null ? '' : ' · ${pay.note}'}${pay.userName == null ? '' : ' · ${pay.userName}'}',
-                        ),
+                    for (final (i, pay) in p.payments.indexed)
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              '${dateTimeFormat.format(pay.createdAt)} — ${currencyFormat.format(pay.amount)}'
+                              '${pay.note == null ? '' : ' · ${pay.note}'}${pay.userName == null ? '' : ' · ${pay.userName}'}',
+                            ),
+                          ),
+                          IconButton(
+                            key: Key('print-payment-$i'),
+                            tooltip: 'Payment receipt (PDF)',
+                            icon: const Icon(Icons.print_outlined, size: 18),
+                            onPressed: () => _print(
+                              context,
+                              ref,
+                              p,
+                              title: 'Payment receipt ${p.reference}-PAY-${i + 1}',
+                              fileName: '${p.reference}-PAY-${i + 1}.pdf',
+                              build: (supplier, _) => (kit) => buildPaymentReceipt(kit, p, i, supplier: supplier),
+                            ),
+                          ),
+                        ],
                       ),
                   ],
                 ],
@@ -280,6 +337,20 @@ class PurchaseDetailDialog extends ConsumerWidget {
           ),
           actions: [
             TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Close')),
+            TextButton.icon(
+              key: const Key('print-order'),
+              onPressed: () => _print(
+                context,
+                ref,
+                p,
+                title: 'Purchase order ${p.reference}',
+                fileName: '${p.reference}.pdf',
+                build: (supplier, warehouse) =>
+                    (kit) => buildPurchaseOrder(kit, p, supplier: supplier, warehouse: warehouse),
+              ),
+              icon: const Icon(Icons.print_outlined, size: 18),
+              label: const Text('Print / PDF'),
+            ),
             if (canCancel)
               TextButton(
                 key: const Key('purchase-cancel'),
