@@ -1,5 +1,5 @@
 // Printable documents (PDF): purchase order, goods received note, payment
-// receipt and supplier statement — the figures they show, that each builds
+// receipt, invoice, sale receipt and customer/supplier statement — the figures they show, that each builds
 // a real PDF with a font that has the naira sign, and that the buttons
 // open the right document.
 
@@ -10,10 +10,13 @@ import 'package:aimify_desktop/features/documents/document_data.dart';
 import 'package:aimify_desktop/features/documents/document_kit.dart';
 import 'package:aimify_desktop/features/documents/document_preview.dart';
 import 'package:aimify_desktop/features/documents/purchase_documents.dart';
+import 'package:aimify_desktop/features/documents/sale_documents.dart';
 import 'package:aimify_desktop/features/documents/statement_dialog.dart';
 import 'package:aimify_desktop/features/parties/domain/party.dart';
 import 'package:aimify_desktop/features/purchases/domain/purchase.dart';
 import 'package:aimify_desktop/features/purchases/presentation/purchase_detail_dialog.dart';
+import 'package:aimify_desktop/features/sales/domain/sale.dart';
+import 'package:aimify_desktop/features/sales/presentation/sale_detail_dialog.dart';
 import 'package:aimify_desktop/shared/services/api_exception.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -55,6 +58,23 @@ Purchase _purchase({String status = 'partially_received'}) => Purchase.fromJson(
       'payments': [
         {'id': 'pay1', 'amount': 300000, 'note': 'Paid when the purchase was recorded', 'createdAt': '2026-10-18T10:00:00.000Z', 'userName': 'Ada'},
         {'id': 'pay2', 'amount': 200000, 'note': 'Bank transfer', 'createdAt': '2026-10-22T10:00:00.000Z', 'userName': 'Ada'},
+      ],
+    });
+
+Sale _sale({String status = 'completed', String? customerId = 'c1'}) => Sale.fromJson({
+      'id': 'sa1', 'reference': 'INV-0012', 'customerId': customerId,
+      'customerName': customerId == null ? 'Walk-in customer' : 'Ada Stores',
+      'warehouseId': 'w1', 'warehouseName': 'Main Warehouse', 'status': status,
+      'saleDate': '2026-10-24T11:30:00.000Z', 'notes': 'Deliver Monday',
+      'subtotal': 160000, 'discount': 5000, 'tax': 11625, 'total': 166625, 'amountPaid': 100000,
+      'voidReason': status == 'voided' ? 'Entered twice' : null, 'createdByName': 'Tunde',
+      'lines': [
+        {'id': 'l1', 'productId': 'rice', 'productName': 'Rice 50kg', 'sku': 'RICE-50', 'unit': 'bag', 'quantity': 2, 'unitPrice': 70000, 'listPrice': 75000},
+        {'id': 'l2', 'productId': 'semo', 'productName': 'Semovita 10kg', 'sku': 'SEMO-10', 'unit': 'bag', 'quantity': 2, 'unitPrice': 10000, 'listPrice': 10000},
+      ],
+      'payments': [
+        {'id': 'sp1', 'amount': 60000, 'method': 'cash', 'createdAt': '2026-10-24T11:30:00.000Z', 'userName': 'Tunde'},
+        {'id': 'sp2', 'amount': 40000, 'method': 'transfer', 'note': 'GTB', 'createdAt': '2026-10-25T09:00:00.000Z', 'userName': 'Ada'},
       ],
     });
 
@@ -139,6 +159,14 @@ void main() {
       expect(buildStatement(from: null, to: DateTime(2026), openingBalance: 5, entries: const []).closingBalance, 5);
     });
 
+    test('a sale receipt shows paid to date and the balance after that payment', () {
+      final s = _sale();
+      expect(salePaymentStanding(s, 0), (paidToDate: 60000.0, balanceAfter: 106625.0));
+      expect(salePaymentStanding(s, 1), (paidToDate: 100000.0, balanceAfter: 66625.0));
+      expect(s.lines.first.discounted, isTrue);
+      expect(s.lines.last.discounted, isFalse);
+    });
+
     test('statement periods, including across a new year', () {
       final jan = DateTime(2026, 1, 15, 9);
       final last = StatementPeriod.lastMonth.range(jan);
@@ -170,7 +198,21 @@ void main() {
         await buildPurchaseOrder(kit, _purchase(status: 'cancelled')),
         await buildGoodsReceivedNote(kit, p, 1, supplier: supplier),
         await buildPaymentReceipt(kit, p, 1, supplier: supplier),
-        await buildSupplierStatement(
+        await buildInvoice(kit, _sale(), customer: fixtureParty('c1', name: 'Ada Stores')),
+        await buildInvoice(kit, _sale(status: 'voided')),
+        await buildInvoice(kit, _sale(customerId: null)),
+        await buildSaleReceipt(kit, _sale(), 1, customer: fixtureParty('c1', name: 'Ada Stores')),
+        await buildPartyStatement(
+          kit,
+          fixtureParty('c1', name: 'Ada Stores'),
+          buildStatement(
+            from: DateTime(2026, 10),
+            to: DateTime(2026, 11),
+            openingBalance: 5000,
+            entries: [_entry('c', 166625, DateTime(2026, 10, 24), note: 'Sale INV-0012')],
+          ),
+        ),
+        await buildPartyStatement(
           kit,
           supplier,
           buildStatement(from: DateTime(2026, 10), to: DateTime(2026, 11), openingBalance: 0, entries: const []),
@@ -186,7 +228,7 @@ void main() {
       final entries = [
         for (var i = 0; i < 120; i++) _entry('e$i', i.isEven ? 1000 : -500, DateTime(2026, 10, 1).add(Duration(hours: i))),
       ];
-      final bytes = await buildSupplierStatement(
+      final bytes = await buildPartyStatement(
         kit,
         fixtureParty('s1', type: PartyType.supplier),
         buildStatement(from: DateTime(2026, 10), to: DateTime(2026, 11), openingBalance: 0, entries: entries),
@@ -209,7 +251,11 @@ void main() {
           overrides: [
             authControllerProvider.overrideWith(_Auth.new),
             documentOpenerProvider.overrideWithValue(opener),
-            ...fakeDataOverrides(purchases: FakePurchasesRepository([_purchase()]), parties: repo),
+            ...fakeDataOverrides(
+              purchases: FakePurchasesRepository([_purchase()]),
+              sales: FakeSalesRepository([_sale()]),
+              parties: repo,
+            ),
           ],
           child: MaterialApp(
             theme: ThemeData(),
@@ -254,6 +300,20 @@ void main() {
       await settle(tester);
 
       expect(opener.opened.map((o) => o.fileName), ['PO-0002.pdf', 'PO-0002-GRN-2.pdf', 'PO-0002-PAY-1.pdf']);
+      expect(opener.opened.every((o) => _isPdf(o.bytes)), isTrue);
+    });
+
+    testWidgets('the sale offers its invoice and a receipt for each payment as a PDF', (tester) async {
+      final (opener, _) = await pump(
+        tester,
+        const SaleDetailDialog(saleId: 'sa1'),
+        parties: FakePartiesRepository(customers: [fixtureParty('c1', name: 'Ada Stores')]),
+      );
+      await tester.tap(find.byKey(const Key('print-invoice')));
+      await settle(tester);
+      await tester.tap(find.byKey(const Key('print-sale-receipt-1')));
+      await settle(tester);
+      expect(opener.opened.map((o) => o.fileName), ['INV-0012.pdf', 'INV-0012-RCPT-2.pdf']);
       expect(opener.opened.every((o) => _isPdf(o.bytes)), isTrue);
     });
 

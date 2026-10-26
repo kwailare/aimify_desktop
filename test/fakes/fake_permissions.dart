@@ -34,6 +34,8 @@ List<String> asGranted(List<String> legacy) => {
 
 const _allPurchases = ['purchases.view', 'purchases.create', 'purchases.receive', 'purchases.cancel'];
 
+const _allSales = ['sales.view', 'sales.create', 'sales.discount', 'sales.override', 'sales.void'];
+
 /// The server's default grid for each role (no customisation), including the
 /// fixed `team.manage`/`setup.complete` for Owners and Administrators.
 List<String> defaultPermissionsFor(String role) => switch (role) {
@@ -41,7 +43,7 @@ List<String> defaultPermissionsFor(String role) => switch (role) {
           'products.write', 'products.archive', 'catalog.write', 'warehouses.manage',
           'stock.out', 'stock.adjust', 'customers.read', 'customers.write',
           'suppliers.read', 'suppliers.write', 'credit.record', 'team.manage', 'setup.complete',
-          ..._allPurchases,
+          ..._allPurchases, ..._allSales,
         ]),
       'Warehouse Manager' => asGranted([
           'products.write', 'products.archive', 'catalog.write', 'warehouses.manage',
@@ -49,7 +51,7 @@ List<String> defaultPermissionsFor(String role) => switch (role) {
           ..._allPurchases,
         ]),
       'Inventory Staff' => asGranted(['products.write', 'catalog.write', 'stock.out', 'stock.adjust']),
-      'Sales Staff' => asGranted(['stock.out', 'customers.read', 'customers.write']),
-      'Accountant / Finance' => asGranted(['customers.read', 'suppliers.read', 'credit.record', 'purchases.view']),
+      'Sales Staff' => asGranted(['stock.out', 'customers.read', 'customers.write', 'sales.view', 'sales.create']),
+      'Accountant / Finance' => asGranted(['customers.read', 'suppliers.read', 'credit.record', 'purchases.view', 'sales.view']),
       _ => const [],
     };

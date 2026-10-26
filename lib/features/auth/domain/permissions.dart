@@ -71,6 +71,21 @@ class Permissions {
   /// Cancel a purchase nothing was received on.
   static const purchasesCancel = 'purchases.cancel';
 
+  /// See sales (Owner, Administrator, Sales Staff, Accountant).
+  static const salesView = 'sales.view';
+
+  /// Record a sale and take payment at the counter.
+  static const salesCreate = 'sales.create';
+
+  /// Sell at another price than the product's, or give a discount.
+  static const salesDiscount = 'sales.discount';
+
+  /// Complete a credit sale over the customer's credit limit.
+  static const salesOverride = 'sales.override';
+
+  /// Void a sale (stock goes back).
+  static const salesVoid = 'sales.void';
+
   /// List the team and invite people (Owner, Administrator; not editable).
   static const teamManage = 'team.manage';
 

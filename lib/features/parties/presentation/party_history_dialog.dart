@@ -12,6 +12,8 @@ import '../../products/data/products_repository.dart';
 import '../../purchases/data/purchases_repository.dart';
 import '../../purchases/presentation/purchase_detail_dialog.dart';
 import '../../purchases/presentation/purchase_form_dialog.dart';
+import '../../sales/data/sales_repository.dart';
+import '../../sales/presentation/sale_detail_dialog.dart';
 import '../data/parties_repository.dart';
 import '../domain/party.dart';
 import 'credit_entry_dialog.dart';
@@ -69,6 +71,8 @@ class PartyHistoryDialog extends ConsumerWidget {
               _ProductsSupplied(supplierId: party.id),
             if (!isCustomer && hasPermission(ref, Permissions.purchasesView))
               _SupplierPurchases(supplierId: party.id),
+            if (isCustomer && hasPermission(ref, Permissions.salesView))
+              _CustomerSales(customerId: party.id),
             const SizedBox(height: 12),
             Flexible(
               child: ConstrainedBox(
@@ -99,7 +103,7 @@ class PartyHistoryDialog extends ConsumerWidget {
       ),
       actions: [
         TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Close')),
-        if (!isCustomer && !live.isPending)
+        if (!live.isPending)
           TextButton.icon(
             key: const Key('supplier-statement'),
             onPressed: () => showDialog(context: context, builder: (_) => StatementDialog(party: live)),
@@ -110,7 +114,7 @@ class PartyHistoryDialog extends ConsumerWidget {
           TextButton(onPressed: () => open(CreditKind.adjustment), child: const Text('Adjust')),
           OutlinedButton(
             onPressed: () => open(CreditKind.charge),
-            child: Text(isCustomer ? 'Add credit sale' : 'Add invoice'),
+            child: Text(isCustomer ? 'Add charge' : 'Add invoice'),
           ),
           ElevatedButton(
             onPressed: live.balanceOwed > 0 ? () => open(CreditKind.payment) : null,
@@ -297,6 +301,75 @@ class _SupplierPurchases extends ConsumerWidget {
               ),
           if (purchases.length > _shown)
             Text('+${purchases.length - _shown} more on the Purchases screen',
+                style: theme.textTheme.bodySmall?.copyWith(color: muted)),
+        ],
+      ),
+    );
+  }
+}
+
+/// The customer's sales, newest first, with what is still due on each.
+class _CustomerSales extends ConsumerWidget {
+  const _CustomerSales({required this.customerId});
+
+  final String customerId;
+
+  static const _shown = 6;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final sales = ref.watch(customerSalesProvider(customerId));
+    final canCreate = hasPermission(ref, Permissions.salesCreate);
+    final muted = theme.colorScheme.onSurface.withValues(alpha: 0.55);
+
+    return Padding(
+      key: const Key('customer-sales'),
+      padding: const EdgeInsets.only(top: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Sales (${sales.length})',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                  ),
+                ),
+              ),
+              if (canCreate)
+                TextButton.icon(
+                  key: const Key('customer-new-sale'),
+                  onPressed: () => recordSale(context, ref, customerId: customerId),
+                  icon: const Icon(Icons.add, size: 16),
+                  label: const Text('New sale'),
+                ),
+            ],
+          ),
+          if (sales.isEmpty)
+            Text('None yet.', style: theme.textTheme.bodySmall?.copyWith(color: muted))
+          else
+            for (final s in sales.take(_shown))
+              InkWell(
+                onTap: () => showDialog(context: context, builder: (_) => SaleDetailDialog(saleId: s.id)),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
+                    children: [
+                      SizedBox(width: 80, child: Text(s.reference, style: const TextStyle(fontWeight: FontWeight.w600))),
+                      Expanded(child: Text(dateFormat.format(s.saleDate), style: theme.textTheme.bodySmall)),
+                      salePaymentPill(s),
+                      const SizedBox(width: 8),
+                      SizedBox(width: 110, child: Text(currencyFormat.format(s.total), textAlign: TextAlign.end)),
+                    ],
+                  ),
+                ),
+              ),
+          if (sales.length > _shown)
+            Text('+${sales.length - _shown} more on the Sales screen',
                 style: theme.textTheme.bodySmall?.copyWith(color: muted)),
         ],
       ),

@@ -4,6 +4,7 @@ import '../../../shared/offline/outbox.dart';
 import '../../products/data/products_repository.dart';
 import '../../products/domain/product.dart';
 import '../../purchases/domain/purchase.dart';
+import '../../sales/domain/sale.dart';
 import '../domain/stock_movement.dart';
 
 /// What the screens should show: the last data from the server with every
@@ -53,6 +54,13 @@ OutboxView overlayOutbox(List<Product> base, List<OutboxOp> ops) {
       case OpKind.partyArchive:
       case OpKind.creditEntry:
         break;
+      case OpKind.saleCreate:
+        // Sold while offline: the stock leaves the warehouse on screen at once.
+        final sale = SaleInput.fromJson(Map<String, dynamic>.from(op.payload['input'] as Map));
+        for (final line in sale.lines) {
+          final i = indexOf(line.productId);
+          if (i >= 0) products[i] = products[i].withMovement(sale.warehouseId, -line.quantity);
+        }
       case OpKind.purchaseCreate:
         // Bought and received while offline: the stock shows at once.
         final input = PurchaseInput.fromJson(Map<String, dynamic>.from(op.payload['input'] as Map));

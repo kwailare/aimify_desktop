@@ -104,6 +104,11 @@ up whenever it re-reads `/me` (after any `402`/`403`, and on refresh).
 | | `purchases.create` | Record a purchase and edit it while nothing is received | Owner, Administrator, Warehouse Manager |
 | | `purchases.receive` | Receive deliveries (adds stock) | Owner, Administrator, Warehouse Manager |
 | | `purchases.cancel` | Cancel a purchase nothing was received on | Owner, Administrator, Warehouse Manager |
+| Sales | `sales.view` | List and read sales | Owner, Administrator, Sales Staff, Accountant / Finance |
+| | `sales.create` | Record a sale (and take payment at the counter) | Owner, Administrator, Sales Staff |
+| | `sales.discount` | Sell at a price other than the product's, or give a discount | Owner, Administrator |
+| | `sales.override` | Complete a credit sale over the customer's credit limit | Owner, Administrator |
+| | `sales.void` | Void a sale (stock goes back) | Owner, Administrator |
 | Fixed | `team.manage` | List the team and invite people | Owner, Administrator (not editable) |
 | | `setup.complete` | Mark the guided setup as finished | Owner, Administrator (not editable) |
 
@@ -112,7 +117,8 @@ without them: every action includes its module's `view`; `stock.in`,
 `stock.out` and `stock.adjust` include `products.view` and `warehouses.view`
 (a movement picks both); `products.create` and `products.edit` include
 `catalog.view`; `purchases.create` and `purchases.receive` include
-`products.view` and `warehouses.view`. The grid editor applies the same rule, so a saved grid is
+`products.view` and `warehouses.view`; `sales.create` includes `products.view` and
+`warehouses.view`, and `sales.discount` and `sales.override` include `sales.create`. The grid editor applies the same rule, so a saved grid is
 always consistent.
 
 An update that changes `status` (archive, restore, disable, re-enable) needs
@@ -780,6 +786,117 @@ received (`409` `purchase_not_cancellable` otherwise). If money was paid on
 it, that amount goes on the supplier's account as a negative `adjustment`
 (the supplier owes it back), and the response's `refundOwed` says how much.
 
+## Sales
+
+Header required: `Authorization: Bearer <token>`. A sale sells products to a
+customer (or a walk-in) from one warehouse. It is completed the moment it is
+recorded: the stock leaves the warehouse at once. Numbers are per
+organization (`INV-0001`, `INV-0002`, ...). The only later change is
+voiding it.
+
+Recording a sale, in one all-or-nothing database step:
+
+- takes each line's quantity out of the warehouse (a `stock_out` movement,
+  reason "Sold on INV-0001", `saleId` set). A sale can't take a warehouse
+  below zero: one short line refuses the whole sale;
+- keeps each line's `listPrice` (the product's selling price then) and its
+  cost (purchase price then, for profit reports);
+- for a named customer, puts the sale `total` on their credit ledger as a
+  `charge` and anything paid at the counter as a `payment` (both with
+  `saleId`), so their statement shows cash sales too.
+
+### The sale object
+
+```json
+{
+  "id": "uuid", "number": 1, "reference": "INV-0001",
+  "customerId": "uuid", "customerName": "Ada Stores",
+  "warehouseId": "uuid", "warehouseName": "Lagos Main",
+  "status": "completed",
+  "saleDate": "2026-10-26T10:00:00.000Z", "notes": null,
+  "subtotal": 140000, "discount": 0, "tax": 0, "total": 140000,
+  "amountPaid": 100000, "balance": 40000, "paymentStatus": "partial",
+  "overLimit": false, "voidedAt": null, "voidReason": null,
+  "createdBy": "uuid", "createdByName": "Tunde", "createdAt": "...",
+  "units": 2,
+  "lines": [
+    {
+      "id": "uuid", "productId": "uuid", "productName": "Rice 50kg", "sku": "RICE-50", "unit": "bag",
+      "quantity": 2, "unitPrice": 70000, "listPrice": 70000, "lineTotal": 140000
+    }
+  ]
+}
+```
+
+`customerId` is `null` (and `customerName` "Walk-in customer") for a walk-in
+sale. `paymentStatus` is `unpaid`, `partial`, `paid`, or `voided`.
+`overLimit` is true when an Owner or Administrator allowed it over the
+customer's credit limit. `GET /sales/{id}` adds `payments`
+(`[{ id, amount, method, note, createdAt, userName }]`).
+
+### `GET /api/v1/sales`
+
+Needs `sales.view`. Newest first, with lines. Filters: `?status=completed`,
+`voided` or `unpaid` (completed with a balance), `?customerId=`,
+`?warehouseId=`, `?from=` and `?to=` (sale date), `?limit=` (default 100,
+max 200).
+
+### `POST /api/v1/sales`
+
+Needs `sales.create`.
+
+```json
+{
+  "customerId": "uuid or null",
+  "warehouseId": "uuid",
+  "lines": [{ "productId": "uuid", "quantity": 2, "unitPrice": 70000 }],
+  "discount": 0,
+  "tax": 0,
+  "amountPaid": 140000,
+  "paymentMethod": "cash",
+  "saleDate": "optional",
+  "notes": "optional",
+  "allowOverLimit": false,
+  "clientRef": "optional, makes a retry harmless"
+}
+```
+
+- `unitPrice` defaults to the product's selling price. A different price,
+  or a `discount` above 0, needs `sales.discount` (`403 forbidden_role`).
+- `amountPaid` defaults to the total (a cash sale). `paymentMethod` is one of
+  `cash`, `transfer`, `pos`, `card`, `cheque`, `other`. Taking payment at
+  the counter is part of selling; later payments need `credit.record`.
+- A walk-in sale (`customerId: null`) must be paid in full: `400`
+  `walk_in_must_pay` otherwise.
+- If the unpaid part would take the customer over their `creditLimit` (0
+  means no limit), it is refused with `409 over_credit_limit` and
+  `available` (credit left). `"allowOverLimit": true` (needs
+  `sales.override`) records it anyway, flagged `overLimit`.
+- `409 insufficient_stock` (with `productId`, `name`, `available`) when the
+  warehouse doesn't hold enough; `409 warehouse_inactive`; `400
+  invalid_customer` / `invalid_product`.
+
+`201` with `{ sale, alerts: [{ productId, alert }] }`: `alert` is
+`low_stock` or `out_of_stock` when the sale took a product's total across
+that line, and the organization is emailed as with stock movements. The
+same `clientRef` again returns the sale already recorded with
+`"duplicate": true`. Two sellers taking the last units at the same moment
+can't oversell: the second is checked against what the first left.
+
+### `POST /api/v1/sales/{id}/payments`
+
+Needs `sales.view` and `credit.record`. `{ "amount": 40000, "method": "pos",
+"note": "optional", "clientRef": "optional" }`. Also a payment on the
+customer's account. `409 overpayment` (with `remaining`) or `sale_voided`.
+
+### `POST /api/v1/sales/{id}/void`
+
+Needs `sales.void`. `{ "reason": "Wrong customer" }` (required). Every line's
+stock goes back to the warehouse (`stock_in`, "Voided INV-0001") and the
+sale comes off the customer's account (an `adjustment` of minus the total),
+so money already paid stays as a credit owed back to them: the response's
+`refundOwed`. `409 sale_not_voidable` if already voided.
+
 ## Reports
 
 ### `GET /api/v1/reports/valuation`
@@ -1053,8 +1170,8 @@ website's Team page.
 
 ## What this API does *not* do yet
 
-- **No sales or expenses yet.** Purchases, stock, customers, suppliers and
-  the credit ledger exist; these build on them.
+- **No expenses yet.** They are still saved on the desktop only.
+- **No returns yet** (Phase 2). A sale recorded by mistake can be voided.
 - **No stock transfers between warehouses yet.** Moving stock means a stock
   out in one warehouse and a stock in to the other.
 - **Plan limits are configured by the Aimify team.** The default plan allows

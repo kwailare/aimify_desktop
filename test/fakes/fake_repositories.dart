@@ -7,6 +7,8 @@ import 'package:aimify_desktop/features/products/data/catalog_repository.dart';
 import 'package:aimify_desktop/features/purchases/data/purchases_repository.dart';
 import 'package:aimify_desktop/features/purchases/domain/purchase.dart';
 import 'package:aimify_desktop/features/reports/data/valuation_report.dart';
+import 'package:aimify_desktop/features/sales/data/sales_repository.dart';
+import 'package:aimify_desktop/features/sales/domain/sale.dart';
 import 'package:aimify_desktop/features/products/data/products_repository.dart';
 import 'package:aimify_desktop/features/products/domain/product.dart';
 import 'package:aimify_desktop/features/warehouses/data/warehouses_repository.dart';
@@ -540,6 +542,169 @@ Purchase fixturePurchase(
   );
 }
 
+class FakeSalesRepository implements SalesRepository {
+  FakeSalesRepository([List<Sale>? sales]) : sales = sales ?? [];
+
+  List<Sale> sales;
+
+  /// Every create sent, with its clientRef.
+  final List<({SaleInput input, String? clientRef})> created = [];
+  final List<({String id, double amount, SalePaymentMethod method})> paid = [];
+  final List<({String id, String reason})> voided = [];
+
+  /// Stock alerts the next create returns.
+  List<({String productId, String alert})> alerts = const [];
+
+  /// Thrown by the next write when set (a refusal or a network failure).
+  Object? writeError;
+
+  void _maybeFail() {
+    final error = writeError;
+    if (error != null) throw error;
+  }
+
+  Sale _find(String id) => sales.firstWhere((s) => s.id == id);
+
+  Sale _copy(Sale s, {SaleStatus? status, double? amountPaid, String? voidReason, List<SalePayment>? payments}) =>
+      Sale(
+        id: s.id,
+        reference: s.reference,
+        customerId: s.customerId,
+        customerName: s.customerName,
+        warehouseId: s.warehouseId,
+        warehouseName: s.warehouseName,
+        status: status ?? s.status,
+        saleDate: s.saleDate,
+        subtotal: s.subtotal,
+        discount: s.discount,
+        tax: s.tax,
+        total: s.total,
+        amountPaid: amountPaid ?? s.amountPaid,
+        voidReason: voidReason ?? s.voidReason,
+        createdByName: s.createdByName,
+        lines: s.lines,
+        payments: payments ?? s.payments,
+      );
+
+  void _replace(Sale sale) => sales = [for (final s in sales) s.id == sale.id ? sale : s];
+
+  @override
+  Future<List<Sale>> list() async => List.of(sales);
+
+  @override
+  Future<Sale> get(String id) async => _find(id);
+
+  @override
+  Future<SaleOutcome> create(SaleInput input, {String? clientRef}) async {
+    _maybeFail();
+    created.add((input: input, clientRef: clientRef));
+    final n = created.length;
+    final sale = fixtureSale(
+      'srv$n',
+      reference: 'INV-${n.toString().padLeft(4, '0')}',
+      customerId: input.customerId,
+      warehouseId: input.warehouseId,
+      lines: [for (final l in input.lines) (productId: l.productId, quantity: l.quantity, unitPrice: l.unitPrice)],
+      discount: input.discount,
+      tax: input.tax,
+      amountPaid: input.amountPaid,
+      method: input.paymentMethod,
+    );
+    sales = [sale, ...sales];
+    return SaleOutcome(sale: sale, alerts: alerts);
+  }
+
+  @override
+  Future<Sale> pay(String id, {required double amount, required SalePaymentMethod method, String? note}) async {
+    _maybeFail();
+    paid.add((id: id, amount: amount, method: method));
+    final s = _find(id);
+    final sale = _copy(
+      s,
+      amountPaid: s.amountPaid + amount,
+      payments: [
+        ...s.payments,
+        SalePayment(
+          id: '$id-p${s.payments.length}',
+          amount: amount,
+          method: method,
+          note: note,
+          createdAt: DateTime(2026, 10, 26, 12),
+        ),
+      ],
+    );
+    _replace(sale);
+    return sale;
+  }
+
+  @override
+  Future<({Sale sale, double refundOwed})> voidSale(String id, {required String reason}) async {
+    _maybeFail();
+    voided.add((id: id, reason: reason));
+    final s = _find(id);
+    final sale = _copy(s, status: SaleStatus.voided, voidReason: reason);
+    _replace(sale);
+    return (sale: sale, refundOwed: s.amountPaid);
+  }
+}
+
+/// A sale as the server would return it.
+Sale fixtureSale(
+  String id, {
+  String reference = 'INV-0001',
+  String? customerId = 'c1',
+  String? customerName,
+  String warehouseId = 'w1',
+  String warehouseName = 'Main Warehouse',
+  SaleStatus status = SaleStatus.completed,
+  List<({String productId, int quantity, double unitPrice})>? lines,
+  double discount = 0,
+  double tax = 0,
+  double? amountPaid,
+  SalePaymentMethod method = SalePaymentMethod.cash,
+  DateTime? saleDate,
+  double listPrice = 150,
+}) {
+  final rows = lines ?? [(productId: '1', quantity: 2, unitPrice: 150.0)];
+  final subtotal = rows.fold(0.0, (s, l) => s + l.quantity * l.unitPrice);
+  final total = subtotal - discount + tax;
+  final paid = amountPaid ?? total;
+  final date = saleDate ?? DateTime.now();
+  return Sale(
+    id: id,
+    reference: reference,
+    customerId: customerId,
+    customerName: customerName ?? (customerId == null ? 'Walk-in customer' : 'Customer $customerId'),
+    warehouseId: warehouseId,
+    warehouseName: warehouseName,
+    status: status,
+    saleDate: date,
+    subtotal: subtotal,
+    discount: discount,
+    tax: tax,
+    total: total,
+    amountPaid: paid,
+    voidReason: status == SaleStatus.voided ? 'Entered by mistake' : null,
+    createdByName: 'Ada Owner',
+    lines: [
+      for (var i = 0; i < rows.length; i++)
+        SaleLine(
+          id: '$id-l$i',
+          productId: rows[i].productId,
+          productName: 'Product ${rows[i].productId}',
+          sku: 'SKU-${rows[i].productId}',
+          unit: 'bag',
+          quantity: rows[i].quantity,
+          unitPrice: rows[i].unitPrice,
+          listPrice: listPrice,
+        ),
+    ],
+    payments: [
+      if (paid > 0) SalePayment(id: '$id-p0', amount: paid, method: method, createdAt: date, userName: 'Ada Owner'),
+    ],
+  );
+}
+
 List<Override> fakeDataOverrides({
   FakeProductsRepository? products,
   FakeWarehousesRepository? warehouses,
@@ -548,6 +713,7 @@ List<Override> fakeDataOverrides({
   FakeSupplierOptionsRepository? supplierOptions,
   FakeValuationRepository? valuation,
   FakePurchasesRepository? purchases,
+  FakeSalesRepository? sales,
   LocalStore? store,
 }) =>
     [
@@ -564,4 +730,5 @@ List<Override> fakeDataOverrides({
       supplierOptionsRepositoryProvider.overrideWithValue(supplierOptions ?? FakeSupplierOptionsRepository()),
       valuationRepositoryProvider.overrideWithValue(valuation ?? FakeValuationRepository()),
       purchasesRepositoryProvider.overrideWithValue(purchases ?? FakePurchasesRepository()),
+      salesRepositoryProvider.overrideWithValue(sales ?? FakeSalesRepository()),
     ];

@@ -7,6 +7,7 @@ enum AppScreen {
   dashboard,
   products,
   inventory,
+  sales,
   purchases,
   suppliers,
   customers,
@@ -23,6 +24,7 @@ const screenPaths = {
   AppScreen.dashboard: '/',
   AppScreen.products: '/products',
   AppScreen.inventory: '/inventory',
+  AppScreen.sales: '/sales',
   AppScreen.purchases: '/purchases',
   AppScreen.suppliers: '/suppliers',
   AppScreen.customers: '/customers',
@@ -47,6 +49,7 @@ const _viewPermission = {
   AppScreen.customers: Permissions.customersView,
   AppScreen.warehouses: Permissions.warehousesView,
   AppScreen.purchases: Permissions.purchasesView,
+  AppScreen.sales: Permissions.salesView,
 };
 
 /// Expenses and Reports have no backend permissions yet (expenses are saved

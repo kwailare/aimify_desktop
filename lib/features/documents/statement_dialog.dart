@@ -40,8 +40,8 @@ extension StatementPeriodX on StatementPeriod {
   }
 }
 
-/// Picks the period for a supplier statement, reads that part of the
-/// supplier's ledger from the server and opens the statement.
+/// Picks the period for a customer or supplier statement, reads that part
+/// of their ledger from the server and opens the statement.
 class StatementDialog extends ConsumerStatefulWidget {
   const StatementDialog({super.key, required this.party});
 
@@ -99,7 +99,7 @@ class _StatementDialogState extends ConsumerState<StatementDialog> {
         ref,
         title: 'Statement · ${widget.party.name}',
         fileName: 'Statement-$name.pdf',
-        build: (kit) => buildSupplierStatement(kit, widget.party, statement),
+        build: (kit) => buildPartyStatement(kit, widget.party, statement),
       );
     } catch (e) {
       if (!mounted) return;

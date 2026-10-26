@@ -15,6 +15,7 @@ import '../../features/inventory/presentation/inventory_screen.dart';
 import '../../features/products/presentation/products_screen.dart';
 import '../../features/purchases/presentation/purchases_screen.dart';
 import '../../features/reports/presentation/reports_screen.dart';
+import '../../features/sales/presentation/sales_screen.dart';
 import '../../features/setup_wizard/data/setup_wizard_state.dart';
 import '../../features/setup_wizard/presentation/setup_wizard_screen.dart';
 import '../../features/subscription/presentation/subscription_locked_screen.dart';
@@ -151,6 +152,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           StatefulShellBranch(
             routes: [
               GoRoute(path: '/inventory', builder: (context, state) => const InventoryScreen()),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(path: '/sales', builder: (context, state) => const SalesScreen()),
             ],
           ),
           StatefulShellBranch(

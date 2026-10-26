@@ -53,6 +53,10 @@ class ApiConstants {
   static String purchaseReceive(String id) => '$_v1/purchases/$id/receive';
   static String purchasePayments(String id) => '$_v1/purchases/$id/payments';
   static String purchaseCancel(String id) => '$_v1/purchases/$id/cancel';
+  static const String sales = '$_v1/sales';
+  static String sale(String id) => '$_v1/sales/$id';
+  static String salePayments(String id) => '$_v1/sales/$id/payments';
+  static String saleVoid(String id) => '$_v1/sales/$id/void';
 
   static const String team = '$_v1/team';
   static const String teamInvitations = '$_v1/team/invitations';

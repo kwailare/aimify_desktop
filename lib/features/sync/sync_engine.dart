@@ -18,6 +18,8 @@ import '../products/domain/product.dart';
 import '../purchases/data/purchases_repository.dart';
 import '../purchases/domain/purchase.dart';
 import '../reports/data/valuation_report.dart';
+import '../sales/data/sales_repository.dart';
+import '../sales/domain/sale.dart';
 import '../warehouses/data/warehouses_repository.dart';
 
 /// The outcome of [SyncEngine.submit]: either the server took the change
@@ -191,6 +193,7 @@ class SyncEngine extends Notifier<SyncState> {
           ref.read(partiesProvider(PartyType.customer).notifier).refresh(),
           ref.read(partiesProvider(PartyType.supplier).notifier).refresh(),
           ref.read(purchasesProvider.notifier).refresh(),
+          ref.read(salesProvider.notifier).refresh(),
           ref.read(warehousesProvider.notifier).refresh(),
           ref.read(authControllerProvider.notifier).refresh(),
         ]);
@@ -293,6 +296,13 @@ class SyncEngine extends Notifier<SyncState> {
         // The op id is the clientRef: a purchase that already landed is
         // returned instead of recorded twice, so no check is needed.
         await ref.read(purchasesRepositoryProvider).create(input, clientRef: op.id);
+
+      case OpKind.saleCreate:
+        final input = SaleInput.fromJson(Map<String, dynamic>.from(op.payload['input'] as Map))
+            .resolved((id) => _resolve(id, idMap));
+        // The op id is the clientRef: a sale that already landed is
+        // returned instead of recorded twice.
+        await ref.read(salesRepositoryProvider).create(input, clientRef: op.id);
 
       case OpKind.movement:
         final productId = _resolve(op.payload['productId'] as String, idMap);

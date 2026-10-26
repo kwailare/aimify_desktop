@@ -21,6 +21,7 @@ enum OpKind {
   partyArchive,
   creditEntry,
   purchaseCreate,
+  saleCreate,
 }
 
 /// A unique id for a queued change (time plus randomness, so two changes

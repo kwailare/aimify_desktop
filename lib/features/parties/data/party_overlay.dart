@@ -1,6 +1,7 @@
 import '../../../shared/offline/outbox.dart';
 import '../domain/party.dart';
 import '../../purchases/domain/purchase.dart';
+import '../../sales/domain/sale.dart';
 
 /// The server's parties with every change still waiting in the outbox applied
 /// on top, so a customer or payment recorded offline shows at once (and simply
@@ -44,6 +45,14 @@ List<Party> overlayParties(List<Party> base, List<OutboxOp> ops, PartyType type)
           );
           parties[i] = parties[i].copyWith(balanceOwed: parties[i].balanceOwed + signed);
         }
+      case OpKind.saleCreate:
+        // Sold on credit while offline: the customer owes the unpaid part.
+        if (type != PartyType.customer) continue;
+        final sale = SaleInput.fromJson(Map<String, dynamic>.from(op.payload['input'] as Map));
+        final customerId = sale.customerId;
+        if (customerId == null) continue;
+        final i = indexOf(customerId);
+        if (i >= 0) parties[i] = parties[i].copyWith(balanceOwed: parties[i].balanceOwed + sale.unpaid);
       case OpKind.purchaseCreate:
         // Bought and received while offline: the supplier is owed what's
         // unpaid, as the server will record on its first receipt.

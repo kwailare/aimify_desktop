@@ -232,40 +232,47 @@ String _describe(CreditEntry e) {
   };
 }
 
-/// A supplier's account over a period: opening balance, every purchase,
-/// payment and adjustment with the running balance, and the closing
-/// balance. The balance is what the business owes the supplier.
-Future<Uint8List> buildSupplierStatement(DocumentKit kit, Party supplier, Statement statement) {
+/// A customer's or supplier's account over a period: opening balance,
+/// every sale or purchase, payment and adjustment with the running balance,
+/// and the closing balance. For a customer the balance is what they owe the
+/// business; for a supplier, what the business owes them.
+Future<Uint8List> buildPartyStatement(DocumentKit kit, Party party, Statement statement) {
+  final isCustomer = party.type == PartyType.customer;
+  final who = isCustomer ? 'Customer' : 'Supplier';
+  final charges = isCustomer ? 'Sales & charges' : 'Purchases & charges';
+  final closingLabel = statement.closingBalance < 0
+      ? (isCustomer ? 'Closing balance (you owe the customer)' : 'Closing balance (supplier owes you)')
+      : (isCustomer ? 'Closing balance due' : 'Closing balance owed');
   final period =
       '${statement.from == null ? 'Start' : kit.date(statement.from!)} – '
       '${kit.date(statement.to.subtract(const Duration(seconds: 1)))}';
-  final doc = kit.document('Statement ${supplier.name}');
+  final doc = kit.document('Statement ${party.name}');
   doc.addPage(
     pw.MultiPage(
       pageTheme: kit.pageTheme(),
       header: (context) => context.pageNumber == 1
-          ? kit.header('Supplier statement', [('Period', period), ('Date', kit.date(DateTime.now()))])
+          ? kit.header('$who statement', [('Period', period), ('Date', kit.date(DateTime.now()))])
           : pw.SizedBox(),
       footer: kit.footer,
       build: (context) => [
         _boxes(
           kit,
-          kit.infoBox('Supplier', [
-            supplier.name,
-            if (supplier.contactPerson != null) 'Attn: ${supplier.contactPerson}',
-            supplier.phone,
-            supplier.email,
-            supplier.address,
+          kit.infoBox(who, [
+            party.name,
+            if (party.contactPerson != null) 'Attn: ${party.contactPerson}',
+            party.phone,
+            party.email,
+            party.address,
           ]),
           kit.infoBox('Summary', [
             'Closing balance ${kit.money(statement.closingBalance)}',
             'Opening balance ${kit.money(statement.openingBalance)}',
-            'Purchases & charges ${kit.money(statement.totalCharges)}',
+            '$charges ${kit.money(statement.totalCharges)}',
             'Payments & credits ${kit.money(statement.totalCredits)}',
           ]),
         ),
         kit.table(
-          headers: ['Date', 'Description', 'Purchases', 'Payments', 'Balance'],
+          headers: ['Date', 'Description', isCustomer ? 'Sales' : 'Purchases', 'Payments', 'Balance'],
           rows: [
             ['', 'Opening balance', '', '', kit.money(statement.openingBalance)],
             for (final r in statement.rows)
@@ -287,9 +294,9 @@ Future<Uint8List> buildSupplierStatement(DocumentKit kit, Party supplier, Statem
           },
         ),
         kit.totals([
-          ('Purchases & charges', kit.money(statement.totalCharges)),
+          (charges, kit.money(statement.totalCharges)),
           ('Payments & credits', kit.money(statement.totalCredits)),
-          (statement.closingBalance < 0 ? 'Closing balance (supplier owes you)' : 'Closing balance owed', kit.money(statement.closingBalance.abs())),
+          (closingLabel, kit.money(statement.closingBalance.abs())),
         ]),
         if (statement.rows.isEmpty)
           pw.Padding(
