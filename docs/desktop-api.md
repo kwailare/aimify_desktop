@@ -97,6 +97,7 @@ up whenever it re-reads `/me` (after any `402`/`403`, and on refresh).
 | | `warehouses.disable` | Disable or re-enable a warehouse | Owner, Administrator, Warehouse Manager |
 | Customers | `customers.view` | List and read customers and their credit ledger | Owner, Administrator, Sales Staff, Accountant / Finance |
 | | `customers.create` / `.edit` / `.archive` | Add, edit, archive or restore | Owner, Administrator, Sales Staff |
+| | `customers.types` | Add, rename and remove customer types and their default credit limits | Owner, Administrator |
 | Suppliers | `suppliers.view` | List and read suppliers and their credit ledger | Owner, Administrator, Warehouse Manager, Accountant / Finance |
 | | `suppliers.create` / `.edit` / `.archive` | Add, edit, archive or restore | Owner, Administrator, Warehouse Manager |
 | Credit ledger | `credit.record` | Record charges, payments and adjustments (also needs view of that customer or supplier) | Owner, Administrator, Accountant / Finance |
@@ -979,9 +980,21 @@ details.
   because its credit history has to stay intact.
 
 Fields: `name` (max 200), `phone`, `email`, `address`, `notes` (optional text,
-`null` clears), plus `contactPerson` on suppliers only and `creditLimit` (a
-non-negative number, default `0`) on customers only. Sending a field the other
-resource owns is a `400`.
+`null` clears), plus `contactPerson` on suppliers only, and on customers only
+`creditLimit` (a non-negative number) and `customerTypeId` (one of the
+organization's customer types, or `null`). Sending a field the other resource
+owns is a `400`; an unknown or another organization's type is a `400`.
+
+A new customer given a type but no `creditLimit` takes the type's
+`defaultCreditLimit` (otherwise `0`). Changing a customer's type later never
+changes their limit.
+
+`PATCH` with `"status": "active"` restores an archived record (needs
+`.archive`; logged as `customer.restored` / `supplier.restored`).
+
+Customers also carry, read-only: `customerTypeName` (`null` without a type),
+and what they have bought on completed sales (voided ones don't count):
+`totalSales`, `salesCount` and `lastSaleAt` (`null` if none).
 
 ```json
 {
@@ -994,13 +1007,37 @@ resource owns is a `400`.
     "address": null,
     "notes": null,
     "creditLimit": 200000,
+    "customerTypeId": "uuid",
     "status": "active",
     "createdAt": "2026-09-27T09:00:00.000Z",
     "updatedAt": "2026-09-27T09:00:00.000Z",
-    "balanceOwed": 45000
+    "balanceOwed": 45000,
+    "customerTypeName": "Retail",
+    "totalSales": 1250000,
+    "salesCount": 14,
+    "lastSaleAt": "2026-10-25T15:04:00.000Z"
   }
 }
 ```
+
+### Customer types
+
+Each organization keeps its own list. New organizations (and every
+organization that existed when types were added) start with Retail,
+Wholesale, Distributor and Corporate.
+
+- `GET /api/v1/customer-types` (`customers.view`):
+  `{ "customerTypes": [{ "id", "name", "defaultCreditLimit", "customerCount" }] }`
+  sorted by name. `customerCount` includes archived customers.
+- `POST /api/v1/customer-types` (`customers.types`) with
+  `{ "name": "Agents", "defaultCreditLimit": 100000 }` → `201`
+  `{ "customerType": {...} }`. `name` is required (max 60); a name already
+  used (any case) is a `409`. `defaultCreditLimit` is optional (default `0`).
+- `PATCH /api/v1/customer-types/{id}` (`customers.types`) changes `name` and/or
+  `defaultCreditLimit`. A new default only applies to customers added later.
+- `DELETE /api/v1/customer-types/{id}` (`customers.types`) removes it, or `409`
+  `{ "code": "type_in_use", "customerCount": 3 }` while any customer
+  (archived included) still has it.
 
 Failures: `400` (bad input), `401`, `402`/`403` (subscription, or
 `forbidden_role`), `404` (unknown id, or another organization's).

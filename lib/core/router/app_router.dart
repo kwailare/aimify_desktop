@@ -8,6 +8,7 @@ import '../../features/auth/presentation/auth_controller.dart';
 import '../../features/auth/presentation/login_screen.dart';
 import '../../features/auth/presentation/splash_screen.dart';
 import '../../features/credits_debts/presentation/credits_debts_screen.dart';
+import '../../features/customers/presentation/customer_profile_screen.dart';
 import '../../features/customers/presentation/customers_screen.dart';
 import '../../features/dashboard/presentation/dashboard_screen.dart';
 import '../../features/expenses/presentation/expenses_screen.dart';
@@ -171,7 +172,16 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           ),
           StatefulShellBranch(
             routes: [
-              GoRoute(path: '/customers', builder: (context, state) => const CustomersScreen()),
+              GoRoute(
+                path: '/customers',
+                builder: (context, state) => const CustomersScreen(),
+                routes: [
+                  GoRoute(
+                    path: ':id',
+                    builder: (context, state) => CustomerProfileScreen(customerId: state.pathParameters['id']!),
+                  ),
+                ],
+              ),
             ],
           ),
           StatefulShellBranch(

@@ -1,3 +1,4 @@
+import 'package:aimify_desktop/features/customers/data/customer_types.dart';
 import 'package:aimify_desktop/features/inventory/data/inventory_repository.dart';
 import 'package:aimify_desktop/features/inventory/domain/stock_movement.dart';
 import 'package:aimify_desktop/features/parties/data/parties_repository.dart';
@@ -233,14 +234,28 @@ Party fixtureParty(
   String? name,
   double balance = 0,
   double creditLimit = 0,
+  String? customerTypeId,
+  String? customerTypeName,
+  double totalSales = 0,
+  int salesCount = 0,
+  DateTime? lastSaleAt,
+  bool isActive = true,
+  String? email,
 }) =>
     Party(
       id: id,
       type: type,
       name: name ?? '${type.label} $id',
       phone: '0700',
+      email: email,
       creditLimit: creditLimit,
       balanceOwed: balance,
+      customerTypeId: customerTypeId,
+      customerTypeName: customerTypeName,
+      totalSales: totalSales,
+      salesCount: salesCount,
+      lastSaleAt: lastSaleAt,
+      isActive: isActive,
     );
 
 /// In-memory customers, suppliers and credit ledger. Mirrors the server's
@@ -288,20 +303,44 @@ class FakePartiesRepository implements PartiesRepository {
     final error = createError;
     if (error != null) throw error;
     created.add(input);
-    final party = fixtureParty('srv${created.length}', type: input.type, name: input.name);
+    final party = input.toLocalParty('srv${created.length}').copyWith(isPending: false);
     _setList(input.type, [..._listFor(input.type), party]);
     return party;
   }
 
-  @override
-  Future<Party> update(String id, PartyInput input) async =>
-      _listFor(input.type).firstWhere((p) => p.id == id);
+  /// Every edit sent.
+  final List<({String id, PartyInput input})> updated = [];
 
   @override
+  Future<Party> update(String id, PartyInput input) async {
+    updated.add((id: id, input: input));
+    final next = _listFor(input.type).firstWhere((p) => p.id == id).withInput(input);
+    _setList(input.type, [for (final p in _listFor(input.type)) p.id == id ? next : p]);
+    return next;
+  }
+
+  /// Like the server: customers are listed with the archived ones, suppliers
+  /// without.
+  @override
   Future<Party> archive(PartyType type, String id) async {
-    final archived = _listFor(type).firstWhere((p) => p.id == id);
-    _setList(type, _listFor(type).where((p) => p.id != id).toList());
+    final archived = _listFor(type).firstWhere((p) => p.id == id).copyWith(isActive: false);
+    _setList(
+      type,
+      type == PartyType.customer
+          ? [for (final p in _listFor(type)) p.id == id ? archived : p]
+          : _listFor(type).where((p) => p.id != id).toList(),
+    );
     return archived;
+  }
+
+  final List<String> restored = [];
+
+  @override
+  Future<Party> restore(PartyType type, String id) async {
+    restored.add(id);
+    final active = _listFor(type).firstWhere((p) => p.id == id).copyWith(isActive: true);
+    _setList(type, [for (final p in _listFor(type)) p.id == id ? active : p]);
+    return active;
   }
 
   @override
@@ -595,6 +634,10 @@ class FakeSalesRepository implements SalesRepository {
   Future<Sale> get(String id) async => _find(id);
 
   @override
+  Future<List<Sale>> listForCustomer(String customerId) async =>
+      sales.where((s) => s.customerId == customerId).toList();
+
+  @override
   Future<SaleOutcome> create(SaleInput input, {String? clientRef}) async {
     _maybeFail();
     created.add((input: input, clientRef: clientRef));
@@ -705,6 +748,58 @@ Sale fixtureSale(
   );
 }
 
+class FakeCustomerTypesRepository implements CustomerTypesRepository {
+  FakeCustomerTypesRepository([List<CustomerType>? types])
+      : types = types ??
+            const [
+              CustomerType(id: 't-retail', name: 'Retail'),
+              CustomerType(id: 't-wholesale', name: 'Wholesale', defaultCreditLimit: 500000),
+            ];
+
+  List<CustomerType> types;
+  final List<String> deleted = [];
+
+  /// Thrown by the next change when set.
+  Object? writeError;
+
+  void _maybeFail() {
+    final error = writeError;
+    if (error != null) throw error;
+  }
+
+  @override
+  Future<List<CustomerType>> list() async => List.of(types);
+
+  @override
+  Future<CustomerType> create(String name, {double defaultCreditLimit = 0}) async {
+    _maybeFail();
+    final type = CustomerType(id: 't${types.length + 1}', name: name, defaultCreditLimit: defaultCreditLimit);
+    types = [...types, type];
+    return type;
+  }
+
+  @override
+  Future<CustomerType> update(String id, {String? name, double? defaultCreditLimit}) async {
+    _maybeFail();
+    final old = types.firstWhere((t) => t.id == id);
+    final next = CustomerType(
+      id: id,
+      name: name ?? old.name,
+      defaultCreditLimit: defaultCreditLimit ?? old.defaultCreditLimit,
+      customerCount: old.customerCount,
+    );
+    types = [for (final t in types) t.id == id ? next : t];
+    return next;
+  }
+
+  @override
+  Future<void> delete(String id) async {
+    _maybeFail();
+    deleted.add(id);
+    types = types.where((t) => t.id != id).toList();
+  }
+}
+
 List<Override> fakeDataOverrides({
   FakeProductsRepository? products,
   FakeWarehousesRepository? warehouses,
@@ -714,6 +809,7 @@ List<Override> fakeDataOverrides({
   FakeValuationRepository? valuation,
   FakePurchasesRepository? purchases,
   FakeSalesRepository? sales,
+  FakeCustomerTypesRepository? customerTypes,
   LocalStore? store,
 }) =>
     [
@@ -731,4 +827,5 @@ List<Override> fakeDataOverrides({
       valuationRepositoryProvider.overrideWithValue(valuation ?? FakeValuationRepository()),
       purchasesRepositoryProvider.overrideWithValue(purchases ?? FakePurchasesRepository()),
       salesRepositoryProvider.overrideWithValue(sales ?? FakeSalesRepository()),
+      customerTypesRepositoryProvider.overrideWithValue(customerTypes ?? FakeCustomerTypesRepository()),
     ];

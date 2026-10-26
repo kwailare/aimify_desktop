@@ -42,7 +42,7 @@ List<String> defaultPermissionsFor(String role) => switch (role) {
       'Owner' || 'Administrator' => asGranted([
           'products.write', 'products.archive', 'catalog.write', 'warehouses.manage',
           'stock.out', 'stock.adjust', 'customers.read', 'customers.write',
-          'suppliers.read', 'suppliers.write', 'credit.record', 'team.manage', 'setup.complete',
+          'suppliers.read', 'suppliers.write', 'credit.record', 'team.manage', 'setup.complete', 'customers.types',
           ..._allPurchases, ..._allSales,
         ]),
       'Warehouse Manager' => asGranted([

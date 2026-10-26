@@ -48,7 +48,7 @@ class _CreditsDebtsScreenState extends ConsumerState<CreditsDebtsScreen>
     final canSeeCustomers = hasPermission(ref, Permissions.customersView);
     final canSeeSuppliers = hasPermission(ref, Permissions.suppliersView);
     final canRecord = hasPermission(ref, Permissions.creditRecord);
-    final customers = ref.watch(partyListProvider(PartyType.customer));
+    final customers = ref.watch(activePartyListProvider(PartyType.customer));
     final suppliers = ref.watch(partyListProvider(PartyType.supplier));
 
     final totalReceivable = customers.fold(0.0, (sum, c) => sum + c.balanceOwed);

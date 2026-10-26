@@ -93,7 +93,7 @@ class PartyHistoryDialog extends ConsumerWidget {
                                 shrinkWrap: true,
                                 children: [
                                   for (final entry in entries)
-                                    _EntryRow(entry: entry, myId: myId, theme: theme),
+                                    CreditEntryRow(entry: entry, myId: myId, theme: theme),
                                 ],
                               ),
               ),
@@ -126,8 +126,10 @@ class PartyHistoryDialog extends ConsumerWidget {
   }
 }
 
-class _EntryRow extends StatelessWidget {
-  const _EntryRow({required this.entry, required this.myId, required this.theme});
+/// One ledger line: what it was, when and by whom, and how it moved the
+/// balance.
+class CreditEntryRow extends StatelessWidget {
+  const CreditEntryRow({super.key, required this.entry, required this.myId, required this.theme});
 
   final CreditEntry entry;
   final String? myId;

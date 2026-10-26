@@ -30,6 +30,11 @@ class Party {
     this.balanceOwed = 0,
     this.isActive = true,
     this.isPending = false,
+    this.customerTypeId,
+    this.customerTypeName,
+    this.totalSales = 0,
+    this.salesCount = 0,
+    this.lastSaleAt,
   });
 
   final String id;
@@ -51,9 +56,21 @@ class Party {
   /// True for a party created while offline that hasn't reached the server.
   final bool isPending;
 
+  /// Customers only: their type (Retail, Wholesale, ...), if any.
+  final String? customerTypeId;
+  final String? customerTypeName;
+
+  /// Customers only: what they have bought on completed sales.
+  final double totalSales;
+  final int salesCount;
+  final DateTime? lastSaleAt;
+
+  /// What they can still buy on credit, or null without a limit.
+  double? get creditLeft => creditLimit > 0 ? creditLimit - balanceOwed : null;
+
   bool get isAtCreditLimit => type == PartyType.customer && creditLimit > 0 && balanceOwed >= creditLimit;
 
-  Party copyWith({double? balanceOwed, bool? isPending}) => Party(
+  Party copyWith({double? balanceOwed, bool? isPending, bool? isActive}) => Party(
         id: id,
         type: type,
         name: name,
@@ -64,8 +81,13 @@ class Party {
         notes: notes,
         creditLimit: creditLimit,
         balanceOwed: balanceOwed ?? this.balanceOwed,
-        isActive: isActive,
+        isActive: isActive ?? this.isActive,
         isPending: isPending ?? this.isPending,
+        customerTypeId: customerTypeId,
+        customerTypeName: customerTypeName,
+        totalSales: totalSales,
+        salesCount: salesCount,
+        lastSaleAt: lastSaleAt,
       );
 
   Party withInput(PartyInput input) => Party(
@@ -81,6 +103,11 @@ class Party {
         balanceOwed: balanceOwed,
         isActive: isActive,
         isPending: isPending,
+        customerTypeId: input.customerTypeId,
+        customerTypeName: input.customerTypeId == customerTypeId ? customerTypeName : null,
+        totalSales: totalSales,
+        salesCount: salesCount,
+        lastSaleAt: lastSaleAt,
       );
 
   factory Party.fromJson(PartyType type, Map<String, dynamic> json) => Party(
@@ -95,6 +122,11 @@ class Party {
         creditLimit: (json['creditLimit'] as num?)?.toDouble() ?? 0,
         balanceOwed: (json['balanceOwed'] as num?)?.toDouble() ?? 0,
         isActive: (json['status'] as String?) != 'archived',
+        customerTypeId: json['customerTypeId'] as String?,
+        customerTypeName: json['customerTypeName'] as String?,
+        totalSales: (json['totalSales'] as num?)?.toDouble() ?? 0,
+        salesCount: (json['salesCount'] as num?)?.toInt() ?? 0,
+        lastSaleAt: DateTime.tryParse(json['lastSaleAt'] as String? ?? '')?.toLocal(),
       );
 }
 
@@ -110,6 +142,7 @@ class PartyInput {
     this.address,
     this.notes,
     this.creditLimit = 0,
+    this.customerTypeId,
   });
 
   final PartyType type;
@@ -121,6 +154,9 @@ class PartyInput {
   final String? notes;
   final double creditLimit;
 
+  /// Customers only.
+  final String? customerTypeId;
+
   /// The request body. Customers send `creditLimit`, suppliers send
   /// `contactPerson` — the server refuses the other resource's field.
   Map<String, dynamic> toJson() => {
@@ -131,6 +167,7 @@ class PartyInput {
         'notes': notes,
         if (type == PartyType.supplier) 'contactPerson': contactPerson,
         if (type == PartyType.customer) 'creditLimit': creditLimit,
+        if (type == PartyType.customer) 'customerTypeId': customerTypeId,
       };
 
   factory PartyInput.fromJson(PartyType type, Map<String, dynamic> json) => PartyInput(
@@ -142,6 +179,7 @@ class PartyInput {
         address: json['address'] as String?,
         notes: json['notes'] as String?,
         creditLimit: (json['creditLimit'] as num?)?.toDouble() ?? 0,
+        customerTypeId: json['customerTypeId'] as String?,
       );
 
   Party toLocalParty(String id) => Party(
@@ -155,6 +193,7 @@ class PartyInput {
         notes: notes,
         creditLimit: creditLimit,
         isPending: true,
+        customerTypeId: customerTypeId,
       );
 }
 

@@ -47,6 +47,9 @@ class Permissions {
   /// Archive or restore a customer.
   static const customersArchive = 'customers.archive';
 
+  /// Add, rename and remove customer types and their default credit limits.
+  static const customersTypes = 'customers.types';
+
   /// See suppliers and their credit ledger.
   static const suppliersView = 'suppliers.view';
   static const suppliersCreate = 'suppliers.create';

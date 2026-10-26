@@ -25,6 +25,11 @@ class PartiesRepository {
   String _listUrl(PartyType type) =>
       type == PartyType.customer ? ApiConstants.customers : ApiConstants.suppliers;
 
+  /// Customers are read with the archived ones (the Customers screen can
+  /// show and restore them); screens that pick a customer leave them out.
+  String _readUrl(PartyType type) =>
+      type == PartyType.customer ? '${ApiConstants.customers}?includeArchived=true' : ApiConstants.suppliers;
+
   String _itemUrl(PartyType type, String id) =>
       type == PartyType.customer ? ApiConstants.customer(id) : ApiConstants.supplier(id);
 
@@ -36,7 +41,7 @@ class PartiesRepository {
   Future<List<Party>> listFresh(PartyType type) => _read(type);
 
   Future<List<Party>> _read(PartyType type, {String? cacheKey}) async {
-    final json = await _api.get(_listUrl(type), cacheKey: cacheKey);
+    final json = await _api.get(_readUrl(type), cacheKey: cacheKey);
     return [
       for (final row in (json[type.plural] as List<dynamic>? ?? const []))
         Party.fromJson(type, row as Map<String, dynamic>),
@@ -55,6 +60,12 @@ class PartiesRepository {
 
   Future<Party> archive(PartyType type, String id) async {
     final json = await _api.delete(_itemUrl(type, id));
+    return Party.fromJson(type, json[type.apiValue] as Map<String, dynamic>);
+  }
+
+  /// Makes an archived customer or supplier active again.
+  Future<Party> restore(PartyType type, String id) async {
+    final json = await _api.patch(_itemUrl(type, id), {'status': 'active'});
     return Party.fromJson(type, json[type.apiValue] as Map<String, dynamic>);
   }
 
@@ -233,6 +244,15 @@ class PartiesNotifier extends FamilyAsyncNotifier<List<Party>, PartyType> {
   }
 }
 
+extension PartiesRestore on PartiesNotifier {
+  /// Needs a connection: restoring is rare and has nothing to show offline.
+  Future<Party> restore(String id) async {
+    final party = await ref.read(partiesRepositoryProvider).restore(arg, id);
+    await refresh();
+    return party;
+  }
+}
+
 final partiesProvider =
     AsyncNotifierProvider.family<PartiesNotifier, List<Party>, PartyType>(PartiesNotifier.new);
 
@@ -242,6 +262,11 @@ final partyListProvider = Provider.family<List<Party>, PartyType>((ref, type) {
   final base = ref.watch(partiesProvider(type)).valueOrNull ?? const <Party>[];
   return overlayParties(base, ref.watch(outboxOpsProvider), type);
 });
+
+/// Active customers or suppliers only — what forms and pickers offer.
+final activePartyListProvider = Provider.family<List<Party>, PartyType>(
+  (ref, type) => ref.watch(partyListProvider(type)).where((p) => p.isActive).toList(),
+);
 
 /// Which party's ledger — `({type, id})` has value equality, so it works as a
 /// provider family argument.

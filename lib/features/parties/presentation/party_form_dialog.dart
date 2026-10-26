@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../shared/utils/formatters.dart';
 import '../../../shared/utils/friendly_error.dart';
+import '../../customers/data/customer_types.dart';
 import '../data/parties_repository.dart';
 import '../domain/party.dart';
 
@@ -29,6 +31,11 @@ class _PartyFormDialogState extends ConsumerState<PartyFormDialog> {
   late final _creditLimit = TextEditingController(
     text: _num(widget.party?.creditLimit ?? 0),
   );
+
+  late String? _typeId = widget.party?.customerTypeId;
+
+  /// A new customer's limit follows the chosen type's default until typed in.
+  late bool _limitTouched = _editing;
 
   bool _saving = false;
   String? _error;
@@ -64,6 +71,7 @@ class _PartyFormDialogState extends ConsumerState<PartyFormDialog> {
       address: _optional(_address),
       notes: _optional(_notes),
       creditLimit: _isCustomer ? (double.tryParse(_creditLimit.text.trim()) ?? 0) : 0,
+      customerTypeId: _isCustomer ? _typeId : null,
     );
 
     setState(() {
@@ -96,6 +104,34 @@ class _PartyFormDialogState extends ConsumerState<PartyFormDialog> {
         });
       }
     }
+  }
+
+  Widget _typeField() {
+    final types = ref.watch(customerTypesProvider).valueOrNull ?? const <CustomerType>[];
+    final known = types.any((t) => t.id == _typeId);
+    return DropdownButtonFormField<String?>(
+      key: const Key('party-type'),
+      initialValue: _typeId,
+      isExpanded: true,
+      decoration: InputDecoration(
+        labelText: 'Customer type',
+        helperText: types.isEmpty ? 'Owners and Administrators set up the types under Customers → Types.' : null,
+      ),
+      items: [
+        const DropdownMenuItem<String?>(value: null, child: Text('No type')),
+        for (final t in types) DropdownMenuItem<String?>(value: t.id, child: Text(t.name)),
+        // Kept while the list loads, or if the type was removed meanwhile.
+        if (_typeId != null && !known)
+          DropdownMenuItem<String?>(value: _typeId, child: Text(widget.party?.customerTypeName ?? 'Current type')),
+      ],
+      onChanged: _saving
+          ? null
+          : (id) => setState(() {
+                _typeId = id;
+                final type = types.where((t) => t.id == id).firstOrNull;
+                if (!_limitTouched && type != null) _creditLimit.text = _num(type.defaultCreditLimit);
+              }),
+    );
   }
 
   @override
@@ -157,12 +193,16 @@ class _PartyFormDialogState extends ConsumerState<PartyFormDialog> {
                 ),
                 if (_isCustomer) ...[
                   const SizedBox(height: 12),
+                  _typeField(),
+                  const SizedBox(height: 12),
                   TextFormField(
+                    key: const Key('party-credit-limit'),
                     controller: _creditLimit,
+                    onChanged: (_) => _limitTouched = true,
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       labelText: 'Credit limit',
-                      helperText: 'The most this customer may owe you. 0 means no limit is set.',
+                      helperText: 'The most this customer may owe you (${currencyFormat.currencySymbol}). 0 means no limit is set.',
                     ),
                     validator: (v) {
                       final parsed = double.tryParse((v ?? '').trim());

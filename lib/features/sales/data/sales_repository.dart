@@ -40,6 +40,17 @@ class SalesRepository {
     ];
   }
 
+  /// One customer's sales, newest first (up to 200).
+  Future<List<Sale>> listForCustomer(String customerId) async {
+    final json = await _api.get(
+      '${ApiConstants.sales}?customerId=$customerId&limit=200',
+      cacheKey: 'sales_customer_$customerId',
+    );
+    return [
+      for (final row in (json['sales'] as List<dynamic>? ?? const [])) Sale.fromJson(row as Map<String, dynamic>),
+    ];
+  }
+
   Future<Sale> get(String id) async {
     final json = await _api.get(ApiConstants.sale(id));
     return Sale.fromJson(json['sale'] as Map<String, dynamic>);
@@ -139,6 +150,7 @@ class SalesNotifier extends AsyncNotifier<List<Sale>> {
     ]);
     ref.invalidate(creditEntriesProvider);
     ref.invalidate(valuationReportProvider);
+    ref.invalidate(customerSaleHistoryProvider);
   }
 }
 
@@ -148,6 +160,15 @@ final salesProvider = AsyncNotifierProvider<SalesNotifier, List<Sale>>(SalesNoti
 final saleDetailProvider = FutureProvider.autoDispose.family<Sale, String>(
   (ref, id) => ref.watch(salesRepositoryProvider).get(id),
 );
+
+/// All of one customer's sales (not only the latest 200 of everyone's),
+/// for the customer's page.
+final customerSaleHistoryProvider = FutureProvider.autoDispose.family<List<Sale>, String>((ref, customerId) {
+  if (customerId.startsWith('local:') || !ref.watch(holdsPermissionProvider(Permissions.salesView))) {
+    return const <Sale>[];
+  }
+  return ref.watch(salesRepositoryProvider).listForCustomer(customerId);
+});
 
 /// Sales to one customer, for the customer's history.
 final customerSalesProvider = Provider.family<List<Sale>, String>((ref, customerId) {

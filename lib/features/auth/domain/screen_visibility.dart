@@ -92,4 +92,10 @@ final _screensByPath = {for (final entry in screenPaths.entries) entry.value: en
 
 /// The screen at router location [path], or `null` for a location that
 /// isn't one of the module screens (splash, login, locked).
-AppScreen? screenForPath(String path) => _screensByPath[path];
+/// A page inside a section (`/customers/<id>`) belongs to that section.
+AppScreen? screenForPath(String path) {
+  final exact = _screensByPath[path];
+  if (exact != null) return exact;
+  final first = path.split('/').where((p) => p.isNotEmpty).firstOrNull;
+  return first == null ? null : _screensByPath['/$first'];
+}
