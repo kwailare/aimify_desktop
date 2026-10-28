@@ -257,6 +257,7 @@ class _SalesScreenState extends ConsumerState<SalesScreen> {
                       DataColumn(label: Text('Units'), numeric: true),
                       DataColumn(label: Text('Total'), numeric: true),
                       DataColumn(label: Text('Still due'), numeric: true),
+                      DataColumn(label: Text('Due')),
                       DataColumn(label: Text('Payment')),
                     ],
                     rows: [
@@ -283,6 +284,7 @@ class _SalesScreenState extends ConsumerState<SalesScreen> {
                               ),
                             ),
                             DataCell(Text(s.balance > 0.004 ? currencyFormat.format(s.balance) : '—')),
+                            DataCell(saleDueCell(s, theme)),
                             DataCell(salePaymentPill(s)),
                           ],
                         ),
@@ -311,6 +313,7 @@ class _SalesScreenState extends ConsumerState<SalesScreen> {
         DataCell(Text('$units')),
         DataCell(Text(currencyFormat.format(input.total))),
         DataCell(Text(input.unpaid > 0.004 ? currencyFormat.format(input.unpaid) : '—')),
+        const DataCell(Text('')),
         const DataCell(StatusPill(label: 'Waiting to sync', tone: StatusTone.neutral)),
       ],
     );

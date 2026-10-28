@@ -1,18 +1,74 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../sync/sync_engine.dart';
 import '../../../shared/utils/formatters.dart';
 import '../../../shared/utils/friendly_error.dart';
+import '../../documents/debt_documents.dart';
+import '../../documents/document_preview.dart';
+import '../../sales/domain/sale.dart';
 import '../data/parties_repository.dart';
 import '../domain/party.dart';
 
+typedef CreditEntryResult = SubmitResult<({CreditEntry entry, double balanceOwed})>;
+
+/// Opens the receipt for a payment a customer made on their account.
+void printAccountReceipt(BuildContext context, WidgetRef ref, Party customer, CreditEntry entry) {
+  ref.read(documentOpenerProvider).open(
+        context,
+        ref,
+        title: 'Receipt ${entry.receiptNumber ?? ''}'.trim(),
+        fileName: '${entry.receiptNumber ?? 'receipt'}.pdf',
+        build: (kit) => buildAccountReceipt(kit, customer, entry),
+      );
+}
+
+/// Opens the form for [kind] on [party]'s account, then says what happened:
+/// the new balance, which invoices a payment settled (oldest first), and for
+/// a customer's payment a "Print receipt" action. Offline, that it was saved
+/// on this computer.
+Future<void> recordCreditEntry(BuildContext context, WidgetRef ref, Party party, CreditKind kind) async {
+  final result = await showDialog<CreditEntryResult>(
+    context: context,
+    builder: (_) => CreditEntryDialog(party: party, kind: kind),
+  );
+  if (result == null || !context.mounted) return;
+  final messenger = ScaffoldMessenger.of(context)..hideCurrentSnackBar();
+  final value = result.value;
+  if (result.queued || value == null) {
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text('${kind.label} saved on this computer — it will sync when the connection is good.'),
+      ),
+    );
+    return;
+  }
+  final entry = value.entry;
+  final settled = entry.allocations.map((a) => '${a.reference} ${currencyFormat.format(a.amount)}').join(', ');
+  messenger.showSnackBar(
+    SnackBar(
+      duration: Duration(seconds: entry.receiptNumber != null ? 8 : 4),
+      content: Text(
+        [
+          '${entry.receiptNumber ?? kind.label} recorded — balance is now ${currencyFormat.format(value.balanceOwed)}.',
+          if (settled.isNotEmpty) 'Settled: $settled.',
+        ].join(' '),
+      ),
+      action: entry.receiptNumber == null
+          ? null
+          : SnackBarAction(label: 'Print receipt', onPressed: () => printAccountReceipt(context, ref, party, entry)),
+    ),
+  );
+}
+
 /// Record a payment, a charge or an adjustment on one party's credit ledger.
 ///
-/// For a customer a *charge* is a sale on credit and a *payment* is money
-/// received; for a supplier a *charge* is an invoice from them and a *payment*
-/// is money you paid. The balance is what is still owed either way. The entry
-/// is sent now on a good connection, otherwise saved on this computer and
-/// synced later.
+/// For a customer a *charge* is money they owe outside a sale (an opening
+/// balance, a fee) and a *payment* is money received; for a supplier a
+/// *charge* is an invoice from them and a *payment* is money you paid. A
+/// payment settles the oldest debts first. The balance is what is still owed
+/// either way. The entry is sent now on a good connection, otherwise saved on
+/// this computer and synced later. Pops with the outcome.
 class CreditEntryDialog extends ConsumerStatefulWidget {
   const CreditEntryDialog({super.key, required this.party, required this.kind});
 
@@ -27,6 +83,7 @@ class _CreditEntryDialogState extends ConsumerState<CreditEntryDialog> {
   final _formKey = GlobalKey<FormState>();
   final _amount = TextEditingController();
   final _note = TextEditingController();
+  SalePaymentMethod _method = SalePaymentMethod.cash;
   bool _decrease = false;
   bool _saving = false;
   String? _error;
@@ -45,7 +102,7 @@ class _CreditEntryDialogState extends ConsumerState<CreditEntryDialog> {
             ? 'Record payment from ${widget.party.name}'
             : 'Record payment to ${widget.party.name}',
         CreditKind.charge =>
-          _isCustomer ? 'Add a credit sale for ${widget.party.name}' : 'Add an invoice from ${widget.party.name}',
+          _isCustomer ? 'Add a charge for ${widget.party.name}' : 'Add an invoice from ${widget.party.name}',
         CreditKind.adjustment => 'Adjust ${widget.party.name}\'s balance',
       };
 
@@ -73,23 +130,10 @@ class _CreditEntryDialogState extends ConsumerState<CreditEntryDialog> {
             kind: widget.kind,
             amount: amount,
             note: _note.text,
+            method: widget.kind == CreditKind.payment ? _method.apiValue : null,
           );
       if (!mounted) return;
-      final messenger = ScaffoldMessenger.of(context);
-      Navigator.of(context).pop(true);
-      messenger
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          SnackBar(
-            content: Text(
-              outcome.queued
-                  ? '${widget.kind.label} saved on this computer — it will sync when the '
-                      'connection is good.'
-                  : '${widget.kind.label} recorded — balance is now '
-                      '${currencyFormat.format(outcome.value!.balanceOwed)}.',
-            ),
-          ),
-        );
+      Navigator.of(context).pop<CreditEntryResult>(outcome);
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -103,6 +147,7 @@ class _CreditEntryDialogState extends ConsumerState<CreditEntryDialog> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final muted = theme.colorScheme.onSurface.withValues(alpha: 0.6);
     // The party as the screens show it, including entries still waiting to sync.
     final live = ref
             .watch(partyListProvider(widget.party.type))
@@ -125,9 +170,17 @@ class _CreditEntryDialogState extends ConsumerState<CreditEntryDialog> {
               if (_isCustomer && widget.kind == CreditKind.charge && live.creditLimit > 0)
                 Text(
                   'Credit limit: ${currencyFormat.format(live.creditLimit)}',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
-                  ),
+                  style: theme.textTheme.bodySmall?.copyWith(color: muted),
+                ),
+              if (widget.kind == CreditKind.payment)
+                Text(
+                  'Settles the oldest invoices first.',
+                  style: theme.textTheme.bodySmall?.copyWith(color: muted),
+                ),
+              if (widget.kind == CreditKind.charge)
+                Text(
+                  'Due in ${live.paymentTermsDays} days (their payment terms).',
+                  style: theme.textTheme.bodySmall?.copyWith(color: muted),
                 ),
               const SizedBox(height: 16),
               if (widget.kind == CreditKind.adjustment) ...[
@@ -142,6 +195,7 @@ class _CreditEntryDialogState extends ConsumerState<CreditEntryDialog> {
                 const SizedBox(height: 12),
               ],
               TextFormField(
+                key: const Key('credit-amount'),
                 controller: _amount,
                 autofocus: true,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
@@ -155,6 +209,16 @@ class _CreditEntryDialogState extends ConsumerState<CreditEntryDialog> {
                   return null;
                 },
               ),
+              if (widget.kind == CreditKind.payment) ...[
+                const SizedBox(height: 12),
+                DropdownButtonFormField<SalePaymentMethod>(
+                  key: const Key('credit-method'),
+                  initialValue: _method,
+                  decoration: const InputDecoration(labelText: 'Paid by'),
+                  items: [for (final m in SalePaymentMethod.values) DropdownMenuItem(value: m, child: Text(m.label))],
+                  onChanged: _saving ? null : (v) => setState(() => _method = v ?? SalePaymentMethod.cash),
+                ),
+              ],
               const SizedBox(height: 12),
               TextFormField(
                 controller: _note,
@@ -181,6 +245,7 @@ class _CreditEntryDialogState extends ConsumerState<CreditEntryDialog> {
           child: const Text('Cancel'),
         ),
         ElevatedButton(
+          key: const Key('credit-save'),
           onPressed: _saving ? null : _save,
           child: _saving
               ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))

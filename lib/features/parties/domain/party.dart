@@ -35,6 +35,7 @@ class Party {
     this.totalSales = 0,
     this.salesCount = 0,
     this.lastSaleAt,
+    this.paymentTermsDays = 30,
   });
 
   final String id;
@@ -65,6 +66,9 @@ class Party {
   final int salesCount;
   final DateTime? lastSaleAt;
 
+  /// Days after a sale (or a purchase reaching their account) it is due.
+  final int paymentTermsDays;
+
   /// What they can still buy on credit, or null without a limit.
   double? get creditLeft => creditLimit > 0 ? creditLimit - balanceOwed : null;
 
@@ -88,6 +92,7 @@ class Party {
         totalSales: totalSales,
         salesCount: salesCount,
         lastSaleAt: lastSaleAt,
+        paymentTermsDays: paymentTermsDays,
       );
 
   Party withInput(PartyInput input) => Party(
@@ -108,6 +113,7 @@ class Party {
         totalSales: totalSales,
         salesCount: salesCount,
         lastSaleAt: lastSaleAt,
+        paymentTermsDays: input.paymentTermsDays,
       );
 
   factory Party.fromJson(PartyType type, Map<String, dynamic> json) => Party(
@@ -127,6 +133,7 @@ class Party {
         totalSales: (json['totalSales'] as num?)?.toDouble() ?? 0,
         salesCount: (json['salesCount'] as num?)?.toInt() ?? 0,
         lastSaleAt: DateTime.tryParse(json['lastSaleAt'] as String? ?? '')?.toLocal(),
+        paymentTermsDays: (json['paymentTermsDays'] as num?)?.toInt() ?? 30,
       );
 }
 
@@ -143,6 +150,7 @@ class PartyInput {
     this.notes,
     this.creditLimit = 0,
     this.customerTypeId,
+    this.paymentTermsDays = 30,
   });
 
   final PartyType type;
@@ -157,6 +165,8 @@ class PartyInput {
   /// Customers only.
   final String? customerTypeId;
 
+  final int paymentTermsDays;
+
   /// The request body. Customers send `creditLimit`, suppliers send
   /// `contactPerson` — the server refuses the other resource's field.
   Map<String, dynamic> toJson() => {
@@ -168,6 +178,7 @@ class PartyInput {
         if (type == PartyType.supplier) 'contactPerson': contactPerson,
         if (type == PartyType.customer) 'creditLimit': creditLimit,
         if (type == PartyType.customer) 'customerTypeId': customerTypeId,
+        'paymentTermsDays': paymentTermsDays,
       };
 
   factory PartyInput.fromJson(PartyType type, Map<String, dynamic> json) => PartyInput(
@@ -180,6 +191,7 @@ class PartyInput {
         notes: json['notes'] as String?,
         creditLimit: (json['creditLimit'] as num?)?.toDouble() ?? 0,
         customerTypeId: json['customerTypeId'] as String?,
+        paymentTermsDays: (json['paymentTermsDays'] as num?)?.toInt() ?? 30,
       );
 
   Party toLocalParty(String id) => Party(
@@ -194,6 +206,7 @@ class PartyInput {
         creditLimit: creditLimit,
         isPending: true,
         customerTypeId: customerTypeId,
+        paymentTermsDays: paymentTermsDays,
       );
 }
 
@@ -229,6 +242,13 @@ class CreditEntry {
     this.userId,
     required this.createdAt,
     this.isPending = false,
+    this.openAmount = 0,
+    this.dueDate,
+    this.method,
+    this.receiptNumber,
+    this.saleId,
+    this.purchaseId,
+    this.allocations = const [],
   });
 
   final String id;
@@ -241,6 +261,22 @@ class CreditEntry {
   final DateTime createdAt;
   final bool isPending;
 
+  /// A debt: how much of it is still unpaid, and when it is due.
+  final double openAmount;
+  final DateTime? dueDate;
+
+  /// A payment: how it was paid (`cash`, `transfer`, ...) and, for a
+  /// customer paying on account, its receipt number.
+  final String? method;
+  final String? receiptNumber;
+  final String? saleId;
+  final String? purchaseId;
+
+  /// What a payment or credit settled, oldest first.
+  final List<CreditAllocation> allocations;
+
+  bool get isOverdue => openAmount > 0 && dueDate != null && dueDate!.isBefore(DateTime.now());
+
   factory CreditEntry.fromJson(Map<String, dynamic> json) => CreditEntry(
         id: json['id'] as String,
         partyType: PartyTypeX.fromApi(json['partyType'] as String? ?? 'customer'),
@@ -250,6 +286,29 @@ class CreditEntry {
         note: json['note'] as String?,
         userId: json['userId'] as String?,
         createdAt: DateTime.tryParse(json['createdAt'] as String? ?? '')?.toLocal() ?? DateTime.now(),
+        openAmount: (json['openAmount'] as num?)?.toDouble() ?? 0,
+        dueDate: DateTime.tryParse(json['dueDate'] as String? ?? '')?.toLocal(),
+        method: json['method'] as String?,
+        receiptNumber: json['receiptNumber'] as String?,
+        saleId: json['saleId'] as String?,
+        purchaseId: json['purchaseId'] as String?,
+        allocations: [
+          for (final row in (json['allocations'] as List<dynamic>? ?? const []))
+            CreditAllocation.fromJson(row as Map<String, dynamic>),
+        ],
+      );
+}
+
+/// One debt a payment or credit went to.
+class CreditAllocation {
+  const CreditAllocation({required this.reference, required this.amount});
+
+  final String reference;
+  final double amount;
+
+  factory CreditAllocation.fromJson(Map<String, dynamic> json) => CreditAllocation(
+        reference: json['reference'] as String? ?? 'Earlier balance',
+        amount: (json['amount'] as num).toDouble(),
       );
 }
 

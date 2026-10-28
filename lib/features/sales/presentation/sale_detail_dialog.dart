@@ -22,6 +22,18 @@ StatusPill salePaymentPill(Sale sale) {
   return const StatusPill(label: 'Unpaid', tone: StatusTone.negative);
 }
 
+/// When an unpaid sale is due: the date, or how many days overdue.
+Widget saleDueCell(Sale s, ThemeData theme) {
+  if (s.isVoided || s.balance <= 0.004 || s.dueDate == null) return const Text('—');
+  if (s.daysOverdue > 0) {
+    return Text(
+      '${s.daysOverdue}d overdue',
+      style: TextStyle(color: theme.colorScheme.error, fontWeight: FontWeight.w700),
+    );
+  }
+  return Text(dateFormat.format(s.dueDate!));
+}
+
 Party? _customerOf(WidgetRef ref, Sale s) => s.customerId == null
     ? null
     : ref.read(partyListProvider(PartyType.customer)).where((c) => c.id == s.customerId).firstOrNull;
@@ -80,16 +92,19 @@ class SaleDetailDialog extends ConsumerWidget {
     final reason = await showDialog<String>(context: context, builder: (_) => _VoidSaleDialog(sale: s));
     if (reason == null || !context.mounted) return;
     try {
-      final refund = await ref.read(salesProvider.notifier).voidSale(s.id, reason: reason);
+      final result = await ref.read(salesProvider.notifier).voidSale(s.id, reason: reason);
       if (!context.mounted) return;
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
         ..showSnackBar(
           SnackBar(
             content: Text(
-              refund > 0
-                  ? '${s.reference} voided — the stock is back. Refund ${currencyFormat.format(refund)} to ${s.customerName}.'
-                  : '${s.reference} voided — the stock is back.',
+              [
+                '${s.reference} voided — the stock is back.',
+                if (result.creditedToAccount > 0)
+                  '${currencyFormat.format(result.creditedToAccount)} they paid went to their other invoices.',
+                if (result.refundOwed > 0) 'Refund ${currencyFormat.format(result.refundOwed)} to ${s.customerName}.',
+              ].join(' '),
             ),
           ),
         );
@@ -155,10 +170,20 @@ class SaleDetailDialog extends ConsumerWidget {
                     [
                       'From ${s.warehouseName}',
                       dateTimeFormat.format(s.saleDate),
+                      if (s.dueDate != null && !s.isVoided && s.balance > 0.004) 'due ${dateFormat.format(s.dueDate!)}',
                       if (s.createdByName != null) 'by ${s.createdByName}',
                     ].join(' · '),
                     style: theme.textTheme.bodySmall?.copyWith(color: muted),
                   ),
+                  if (s.daysOverdue > 0)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Text(
+                        '${currencyFormat.format(s.balance)} is ${s.daysOverdue} day${s.daysOverdue == 1 ? '' : 's'} overdue.',
+                        key: const Key('sale-overdue-note'),
+                        style: TextStyle(color: theme.colorScheme.error, fontWeight: FontWeight.w600),
+                      ),
+                    ),
                   if (s.isVoided)
                     Padding(
                       padding: const EdgeInsets.only(top: 6),
@@ -238,7 +263,8 @@ class SaleDetailDialog extends ConsumerWidget {
                           Expanded(
                             child: Text(
                               '${dateTimeFormat.format(pay.createdAt)} — ${currencyFormat.format(pay.amount)} · ${pay.method.label}'
-                              '${pay.note == null ? '' : ' · ${pay.note}'}${pay.userName == null ? '' : ' · ${pay.userName}'}',
+                              '${pay.note == null ? '' : ' · ${pay.note}'}${pay.userName == null ? '' : ' · ${pay.userName}'}'
+                              '${pay.receiptNumber == null || (pay.note ?? '').contains(pay.receiptNumber!) ? '' : ' · ${pay.receiptNumber}'}',
                             ),
                           ),
                           IconButton(
@@ -324,8 +350,10 @@ class _VoidSaleDialogState extends State<_VoidSaleDialog> {
               [
                 'The ${s.units} unit${s.units == 1 ? '' : 's'} go back into ${s.warehouseName}.',
                 if (!s.isWalkIn) "The sale comes off ${s.customerName}'s account.",
-                if (s.amountPaid > 0)
+                if (s.amountPaid > 0 && s.isWalkIn)
                   '${currencyFormat.format(s.amountPaid)} was paid — refund it to ${s.customerName}.',
+                if (s.amountPaid > 0 && !s.isWalkIn)
+                  '${currencyFormat.format(s.amountPaid)} was paid: it first settles their other invoices, and anything left is to refund.',
                 "This can't be undone.",
               ].join(' '),
             ),

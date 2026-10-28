@@ -287,6 +287,7 @@ class SyncEngine extends Notifier<SyncState> {
           kind: CreditKindX.fromApi(op.payload['kind'] as String),
           amount: (op.payload['amount'] as num).toDouble(),
           note: op.payload['note'] as String?,
+          method: op.payload['method'] as String?,
           clientRef: op.id,
         );
 

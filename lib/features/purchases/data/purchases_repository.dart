@@ -116,6 +116,8 @@ class PurchasesNotifier extends AsyncNotifier<List<Purchase>> {
   Future<List<Purchase>> build() async {
     if (ref.watch(sessionUserIdProvider) == null) return const [];
     if (!ref.watch(holdsPermissionProvider(Permissions.purchasesView))) return const [];
+    // A payment on a supplier's account can settle purchases.
+    ref.watch(debtsChangedProvider);
     return ref.watch(purchasesRepositoryProvider).list();
   }
 
@@ -196,9 +198,10 @@ final purchasesProvider = AsyncNotifierProvider<PurchasesNotifier, List<Purchase
 );
 
 /// One purchase with its receipts and payments, straight from the server.
-final purchaseDetailProvider = FutureProvider.autoDispose.family<Purchase, String>(
-  (ref, id) => ref.watch(purchasesRepositoryProvider).get(id),
-);
+final purchaseDetailProvider = FutureProvider.autoDispose.family<Purchase, String>((ref, id) {
+  ref.watch(debtsChangedProvider);
+  return ref.watch(purchasesRepositoryProvider).get(id);
+});
 
 /// Purchases from one supplier, for the supplier's history.
 final supplierPurchasesProvider = Provider.family<List<Purchase>, String>((ref, supplierId) {

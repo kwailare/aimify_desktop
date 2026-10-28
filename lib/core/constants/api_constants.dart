@@ -56,6 +56,7 @@ class ApiConstants {
   static const String sales = '$_v1/sales';
   static const String customerTypes = '$_v1/customer-types';
   static String customerType(String id) => '$_v1/customer-types/$id';
+  static const String debtReport = '$_v1/reports/debts';
   static String sale(String id) => '$_v1/sales/$id';
   static String salePayments(String id) => '$_v1/sales/$id/payments';
   static String saleVoid(String id) => '$_v1/sales/$id/void';

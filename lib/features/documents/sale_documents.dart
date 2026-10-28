@@ -32,6 +32,7 @@ Future<Uint8List> buildInvoice(DocumentKit kit, Sale s, {Party? customer}) {
           ? kit.header('Invoice', [
               ('No.', s.reference),
               ('Date', kit.dateTime(s.saleDate)),
+              if (s.dueDate != null && !s.isVoided && !s.isPaid) ('Due', kit.date(s.dueDate!)),
               if (s.createdByName != null) ('Served by', s.createdByName!),
             ])
           : pw.SizedBox(),

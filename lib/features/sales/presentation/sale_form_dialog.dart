@@ -452,7 +452,11 @@ class _SaleFormDialogState extends ConsumerState<SaleFormDialog> {
                       ),
                       if (unpaid > 0.004)
                         Text(
-                          'On credit ${currencyFormat.format(unpaid)}',
+                          [
+                            'On credit ${currencyFormat.format(unpaid)}',
+                            if (customer != null)
+                              'due ${dateFormat.format(DateTime.now().add(Duration(days: customer.paymentTermsDays)))}',
+                          ].join(' · '),
                           key: const Key('sale-on-credit'),
                           style: theme.textTheme.bodySmall?.copyWith(color: muted),
                         ),

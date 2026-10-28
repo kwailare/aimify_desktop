@@ -784,8 +784,9 @@ Needs `purchases.view` and `credit.record`. `{ "amount": 555000, "note":
 
 Needs `purchases.cancel`. Only a draft or pending purchase with nothing
 received (`409` `purchase_not_cancellable` otherwise). If money was paid on
-it, that amount goes on the supplier's account as a negative `adjustment`
-(the supplier owes it back), and the response's `refundOwed` says how much.
+it, that amount goes on the supplier's account as a negative `adjustment`.
+It first settles other purchases still owed to that supplier
+(`creditedToAccount`); what is left is owed back (`refundOwed`).
 
 ## Sales
 
@@ -814,7 +815,8 @@ Recording a sale, in one all-or-nothing database step:
   "customerId": "uuid", "customerName": "Ada Stores",
   "warehouseId": "uuid", "warehouseName": "Lagos Main",
   "status": "completed",
-  "saleDate": "2026-10-26T10:00:00.000Z", "notes": null,
+  "saleDate": "2026-10-26T10:00:00.000Z", "dueDate": "2026-11-25T10:00:00.000Z", "daysOverdue": 0,
+  "notes": null,
   "subtotal": 140000, "discount": 0, "tax": 0, "total": 140000,
   "amountPaid": 100000, "balance": 40000, "paymentStatus": "partial",
   "overLimit": false, "voidedAt": null, "voidReason": null,
@@ -832,8 +834,12 @@ Recording a sale, in one all-or-nothing database step:
 `customerId` is `null` (and `customerName` "Walk-in customer") for a walk-in
 sale. `paymentStatus` is `unpaid`, `partial`, `paid`, or `voided`.
 `overLimit` is true when an Owner or Administrator allowed it over the
-customer's credit limit. `GET /sales/{id}` adds `payments`
-(`[{ id, amount, method, note, createdAt, userName }]`).
+customer's credit limit. `dueDate` is the sale date plus the customer's
+payment terms (`null` for walk-ins); `daysOverdue` is how many days past it an
+unpaid balance is (0 when paid or not yet due). `GET /sales/{id}` adds
+`payments` (`[{ id, amount, method, note, createdAt, userName, receiptNumber }]`);
+a payment made on the customer's account that settled this sale carries that
+payment's `receiptNumber`.
 
 ### `GET /api/v1/sales`
 
@@ -894,9 +900,10 @@ customer's account. `409 overpayment` (with `remaining`) or `sale_voided`.
 
 Needs `sales.void`. `{ "reason": "Wrong customer" }` (required). Every line's
 stock goes back to the warehouse (`stock_in`, "Voided INV-0001") and the
-sale comes off the customer's account (an `adjustment` of minus the total),
-so money already paid stays as a credit owed back to them: the response's
-`refundOwed`. `409 sale_not_voidable` if already voided.
+sale comes off the customer's account (an `adjustment` of minus the total).
+Money already paid on it first settles the customer's other debts
+(`creditedToAccount`); only what is left is owed back to them (`refundOwed`;
+all of it for a walk-in). `409 sale_not_voidable` if already voided.
 
 ## Reports
 
@@ -985,9 +992,12 @@ Fields: `name` (max 200), `phone`, `email`, `address`, `notes` (optional text,
 organization's customer types, or `null`). Sending a field the other resource
 owns is a `400`; an unknown or another organization's type is a `400`.
 
-A new customer given a type but no `creditLimit` takes the type's
-`defaultCreditLimit` (otherwise `0`). Changing a customer's type later never
-changes their limit.
+Both customers and suppliers also take `paymentTermsDays` (whole days, 0 to
+365, default 30): how long after a sale (or a received purchase) it is due.
+
+A new customer given a type but no `creditLimit` or `paymentTermsDays` takes
+the type's `defaultCreditLimit` (otherwise `0`) and `defaultPaymentTermsDays`
+(otherwise 30). Changing a customer's type later never changes them.
 
 `PATCH` with `"status": "active"` restores an archived record (needs
 `.archive`; logged as `customer.restored` / `supplier.restored`).
@@ -1027,14 +1037,16 @@ organization that existed when types were added) start with Retail,
 Wholesale, Distributor and Corporate.
 
 - `GET /api/v1/customer-types` (`customers.view`):
-  `{ "customerTypes": [{ "id", "name", "defaultCreditLimit", "customerCount" }] }`
+  `{ "customerTypes": [{ "id", "name", "defaultCreditLimit", "defaultPaymentTermsDays", "customerCount" }] }`
   sorted by name. `customerCount` includes archived customers.
 - `POST /api/v1/customer-types` (`customers.types`) with
   `{ "name": "Agents", "defaultCreditLimit": 100000 }` → `201`
   `{ "customerType": {...} }`. `name` is required (max 60); a name already
-  used (any case) is a `409`. `defaultCreditLimit` is optional (default `0`).
-- `PATCH /api/v1/customer-types/{id}` (`customers.types`) changes `name` and/or
-  `defaultCreditLimit`. A new default only applies to customers added later.
+  used (any case) is a `409`. `defaultCreditLimit` (default `0`) and
+  `defaultPaymentTermsDays` (0 to 365, default 30) are optional.
+- `PATCH /api/v1/customer-types/{id}` (`customers.types`) changes `name`,
+  `defaultCreditLimit` and/or `defaultPaymentTermsDays`. New defaults only
+  apply to customers added later.
 - `DELETE /api/v1/customer-types/{id}` (`customers.types`) removes it, or `409`
   `{ "code": "type_in_use", "customerCount": 3 }` while any customer
   (archived included) still has it.
@@ -1048,10 +1060,22 @@ One ledger for both sides of a wholesaler's credit: a customer's balance is
 what they owe you, a supplier's balance is what you owe them. A positive
 `balanceOwed` always means "still owed". Every entry you post is kept
 (nothing is ever overwritten), and the party's `balanceOwed` is moved by one
-atomic update per entry - so two people recording payments on the same party
+locked update per entry - so two people recording payments on the same party
 at once, or offline changes synced later, can never both be accepted past
-what's actually owed. The `overpayment` check below is enforced by that same
-atomic update, not a separate read, so it holds even under real concurrency.
+what's actually owed.
+
+**Open amounts and due dates.** Every debt on an account - a charge (a credit
+sale, a received purchase, a manual charge) or an adjustment up - keeps
+`openAmount` (how much of it is still unpaid) and `dueDate`. Charges are due
+after the party's `paymentTermsDays` (sales: from the sale date; purchases:
+from when they reach the account); adjustments up are due at once. Payments and
+adjustments down **settle the oldest debts first** (by due date): each debt's
+open amount goes down, and a sale or purchase it settles gets a payment row
+and a higher `amountPaid`, so invoices show Paid / Part paid correctly.
+Paying on a particular sale or purchase settles that one. The open amounts of
+an account always add up to its balance (or to 0 when the party is in credit).
+A sale made to a customer who is in credit is settled from that credit at
+once.
 
 ### `GET /api/v1/credit-entries`
 
@@ -1077,10 +1101,15 @@ Needs `credit.record`.
   "kind": "payment",
   "amount": 15000,
   "note": "Part payment, cash",
+  "method": "transfer",
   "clientRef": "3f6c1a9e-optional-unique-id"
 }
 ```
 
+- `method` (payments only): `cash`, `transfer`, `pos`, `card`, `cheque` or
+  `other`; default `cash`. Sending it on a charge or adjustment is a `400`.
+- A customer's payment gets the next **receipt number** (`RCPT-0001`, numbered
+  per organization). Supplier payments don't.
 - `kind` is `charge` (a sale on credit or a supplier invoice: raises the
   balance), `payment` (lowers it) or `adjustment` (a signed correction).
 - `amount` is positive for `charge` and `payment`; the server applies the sign.
@@ -1106,14 +1135,63 @@ Needs `credit.record`.
     "note": "Part payment, cash",
     "userId": "uuid",
     "clientRef": "3f6c1a9e-optional-unique-id",
-    "createdAt": "2026-09-27T09:05:00.000Z"
+    "saleId": null,
+    "purchaseId": null,
+    "openAmount": 0,
+    "dueDate": null,
+    "method": "transfer",
+    "receiptNumber": "RCPT-0007",
+    "createdAt": "2026-09-27T09:05:00.000Z",
+    "allocations": [
+      { "reference": "Opening balance", "amount": 5000, "debitEntryId": "uuid" },
+      { "reference": "INV-0012", "amount": 10000, "debitEntryId": "uuid" }
+    ]
   },
   "balanceOwed": 30000
 }
 ```
 
-Entries are stored signed (`amount: -15000` for a payment). Archived parties
-keep their ledger and can still be paid off.
+Entries are stored signed (`amount: -15000` for a payment). `allocations`
+(payments and adjustments down, also in `GET`) lists what the entry settled,
+oldest first: a sale or purchase reference, or the debt's note. Archived
+parties keep their ledger and can still be paid off.
+
+### `GET /api/v1/reports/debts`
+
+Who owes what and for how long. `?partyType=customer` (default; needs
+`customers.view`) or `supplier` (needs `suppliers.view`). Lists every party
+whose balance isn't zero (a negative balance is a credit in their favour),
+most overdue first:
+
+```json
+{
+  "asOf": "2026-10-28T10:00:00.000Z",
+  "partyType": "customer",
+  "totals": {
+    "balance": 830000, "overdue": 410000, "credit": 1500,
+    "current": 420000, "days1to30": 150000, "days31to60": 160000, "days61to90": 0, "over90": 100000
+  },
+  "parties": [
+    {
+      "id": "uuid", "name": "Ada Stores", "phone": "+234...", "email": null, "status": "active",
+      "balance": 300000, "creditLimit": 500000, "paymentTermsDays": 30,
+      "buckets": { "current": 50000, "days1to30": 0, "days31to60": 150000, "days61to90": 0, "over90": 100000 },
+      "overdue": 250000, "maxDaysOverdue": 104, "oldestDueDate": "2026-07-16T09:00:00.000Z",
+      "lastPaymentAt": "2026-10-02T12:00:00.000Z", "daysSinceLastPayment": 26,
+      "items": [
+        {
+          "entryId": "uuid", "kind": "charge", "reference": "INV-0003", "saleId": "uuid", "purchaseId": null,
+          "date": "2026-06-16T09:00:00.000Z", "dueDate": "2026-07-16T09:00:00.000Z",
+          "amount": 120000, "openAmount": 100000, "daysOverdue": 104
+        }
+      ]
+    }
+  ]
+}
+```
+
+Buckets are by days past the due date: `current` (not yet due), 1-30, 31-60,
+61-90 and over 90. `creditLimit` is `null` for suppliers.
 
 ## Guided setup
 

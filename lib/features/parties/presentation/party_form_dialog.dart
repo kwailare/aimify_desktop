@@ -31,11 +31,14 @@ class _PartyFormDialogState extends ConsumerState<PartyFormDialog> {
   late final _creditLimit = TextEditingController(
     text: _num(widget.party?.creditLimit ?? 0),
   );
+  late final _terms = TextEditingController(text: '${widget.party?.paymentTermsDays ?? 30}');
 
   late String? _typeId = widget.party?.customerTypeId;
 
-  /// A new customer's limit follows the chosen type's default until typed in.
+  /// A new customer's limit and terms follow the chosen type's defaults
+  /// until typed in.
   late bool _limitTouched = _editing;
+  late bool _termsTouched = _editing;
 
   bool _saving = false;
   String? _error;
@@ -48,7 +51,7 @@ class _PartyFormDialogState extends ConsumerState<PartyFormDialog> {
 
   @override
   void dispose() {
-    for (final c in [_name, _contact, _phone, _email, _address, _notes, _creditLimit]) {
+    for (final c in [_name, _contact, _phone, _email, _address, _notes, _creditLimit, _terms]) {
       c.dispose();
     }
     super.dispose();
@@ -72,6 +75,7 @@ class _PartyFormDialogState extends ConsumerState<PartyFormDialog> {
       notes: _optional(_notes),
       creditLimit: _isCustomer ? (double.tryParse(_creditLimit.text.trim()) ?? 0) : 0,
       customerTypeId: _isCustomer ? _typeId : null,
+      paymentTermsDays: int.tryParse(_terms.text.trim()) ?? 30,
     );
 
     setState(() {
@@ -130,6 +134,7 @@ class _PartyFormDialogState extends ConsumerState<PartyFormDialog> {
                 _typeId = id;
                 final type = types.where((t) => t.id == id).firstOrNull;
                 if (!_limitTouched && type != null) _creditLimit.text = _num(type.defaultCreditLimit);
+                if (!_termsTouched && type != null) _terms.text = '${type.defaultPaymentTermsDays}';
               }),
     );
   }
@@ -211,6 +216,24 @@ class _PartyFormDialogState extends ConsumerState<PartyFormDialog> {
                     },
                   ),
                 ],
+                const SizedBox(height: 12),
+                TextFormField(
+                  key: const Key('party-terms'),
+                  controller: _terms,
+                  keyboardType: TextInputType.number,
+                  onChanged: (_) => _termsTouched = true,
+                  decoration: InputDecoration(
+                    labelText: 'Payment terms (days)',
+                    helperText: _isCustomer
+                        ? 'How long after a sale it is due. 0 means due at once.'
+                        : 'How long after a delivery you have to pay.',
+                  ),
+                  validator: (v) {
+                    final parsed = int.tryParse((v ?? '').trim());
+                    if (parsed == null || parsed < 0 || parsed > 365) return 'Enter 0 to 365 days';
+                    return null;
+                  },
+                ),
                 const SizedBox(height: 12),
                 TextFormField(
                   controller: _notes,

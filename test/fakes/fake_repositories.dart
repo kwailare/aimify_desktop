@@ -1,3 +1,4 @@
+import 'package:aimify_desktop/features/credits_debts/data/debt_report.dart';
 import 'package:aimify_desktop/features/customers/data/customer_types.dart';
 import 'package:aimify_desktop/features/inventory/data/inventory_repository.dart';
 import 'package:aimify_desktop/features/inventory/domain/stock_movement.dart';
@@ -272,6 +273,13 @@ class FakePartiesRepository implements PartiesRepository {
   /// Every entry recorded, in order (what the sync engine sent).
   final List<({String partyId, CreditKind kind, double amount, String? clientRef})> recorded = [];
 
+  /// The method sent with each entry, in order.
+  final List<String?> methods = [];
+
+  /// What the next payment says it settled.
+  List<CreditAllocation> nextAllocations = const [];
+  int _receipts = 0;
+
   /// Every party created.
   final List<PartyInput> created = [];
 
@@ -376,9 +384,11 @@ class FakePartiesRepository implements PartiesRepository {
     required CreditKind kind,
     required double amount,
     String? note,
+    String? method,
     String? clientRef,
   }) async {
     recorded.add((partyId: partyId, kind: kind, amount: amount, clientRef: clientRef));
+    methods.add(method);
     final error = recordError;
     if (error != null) throw error;
 
@@ -405,6 +415,11 @@ class FakePartiesRepository implements PartiesRepository {
       note: note,
       userId: 'u1',
       createdAt: DateTime.now(),
+      method: kind == CreditKind.payment ? (method ?? 'cash') : null,
+      receiptNumber: partyType == PartyType.customer && kind == CreditKind.payment
+          ? 'RCPT-${(++_receipts).toString().padLeft(4, '0')}'
+          : null,
+      allocations: signed < 0 ? nextAllocations : const [],
     );
     ledger.add(entry);
     if (clientRef != null) _byRef[clientRef] = entry;
@@ -681,13 +696,13 @@ class FakeSalesRepository implements SalesRepository {
   }
 
   @override
-  Future<({Sale sale, double refundOwed})> voidSale(String id, {required String reason}) async {
+  Future<({Sale sale, double refundOwed, double creditedToAccount})> voidSale(String id, {required String reason}) async {
     _maybeFail();
     voided.add((id: id, reason: reason));
     final s = _find(id);
     final sale = _copy(s, status: SaleStatus.voided, voidReason: reason);
     _replace(sale);
-    return (sale: sale, refundOwed: s.amountPaid);
+    return (sale: sale, refundOwed: s.amountPaid, creditedToAccount: 0.0);
   }
 }
 
@@ -771,21 +786,27 @@ class FakeCustomerTypesRepository implements CustomerTypesRepository {
   Future<List<CustomerType>> list() async => List.of(types);
 
   @override
-  Future<CustomerType> create(String name, {double defaultCreditLimit = 0}) async {
+  Future<CustomerType> create(String name, {double defaultCreditLimit = 0, int defaultPaymentTermsDays = 30}) async {
     _maybeFail();
-    final type = CustomerType(id: 't${types.length + 1}', name: name, defaultCreditLimit: defaultCreditLimit);
+    final type = CustomerType(
+      id: 't${types.length + 1}',
+      name: name,
+      defaultCreditLimit: defaultCreditLimit,
+      defaultPaymentTermsDays: defaultPaymentTermsDays,
+    );
     types = [...types, type];
     return type;
   }
 
   @override
-  Future<CustomerType> update(String id, {String? name, double? defaultCreditLimit}) async {
+  Future<CustomerType> update(String id, {String? name, double? defaultCreditLimit, int? defaultPaymentTermsDays}) async {
     _maybeFail();
     final old = types.firstWhere((t) => t.id == id);
     final next = CustomerType(
       id: id,
       name: name ?? old.name,
       defaultCreditLimit: defaultCreditLimit ?? old.defaultCreditLimit,
+      defaultPaymentTermsDays: defaultPaymentTermsDays ?? old.defaultPaymentTermsDays,
       customerCount: old.customerCount,
     );
     types = [for (final t in types) t.id == id ? next : t];
@@ -800,6 +821,29 @@ class FakeCustomerTypesRepository implements CustomerTypesRepository {
   }
 }
 
+class FakeDebtReportRepository implements DebtReportRepository {
+  FakeDebtReportRepository({this.customers, this.suppliers});
+
+  DebtReport? customers;
+  DebtReport? suppliers;
+  final List<PartyType> requested = [];
+
+  @override
+  Future<DebtReport> fetch(PartyType type) async {
+    requested.add(type);
+    return (type == PartyType.customer ? customers : suppliers) ??
+        DebtReport(
+          asOf: DateTime(2026, 10, 28, 9),
+          type: type,
+          balance: 0,
+          overdue: 0,
+          credit: 0,
+          buckets: {for (final b in AgeBucket.values) b: 0},
+          parties: const [],
+        );
+  }
+}
+
 List<Override> fakeDataOverrides({
   FakeProductsRepository? products,
   FakeWarehousesRepository? warehouses,
@@ -810,6 +854,7 @@ List<Override> fakeDataOverrides({
   FakePurchasesRepository? purchases,
   FakeSalesRepository? sales,
   FakeCustomerTypesRepository? customerTypes,
+  FakeDebtReportRepository? debts,
   LocalStore? store,
 }) =>
     [
@@ -828,4 +873,5 @@ List<Override> fakeDataOverrides({
       purchasesRepositoryProvider.overrideWithValue(purchases ?? FakePurchasesRepository()),
       salesRepositoryProvider.overrideWithValue(sales ?? FakeSalesRepository()),
       customerTypesRepositoryProvider.overrideWithValue(customerTypes ?? FakeCustomerTypesRepository()),
+      debtReportRepositoryProvider.overrideWithValue(debts ?? FakeDebtReportRepository()),
     ];

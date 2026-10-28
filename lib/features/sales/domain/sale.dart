@@ -66,6 +66,7 @@ class SalePayment {
     this.note,
     required this.createdAt,
     this.userName,
+    this.receiptNumber,
   });
 
   final String id;
@@ -75,6 +76,9 @@ class SalePayment {
   final DateTime createdAt;
   final String? userName;
 
+  /// Set when it came from a payment on the customer's account.
+  final String? receiptNumber;
+
   factory SalePayment.fromJson(Map<String, dynamic> json) => SalePayment(
         id: json['id'] as String,
         amount: (json['amount'] as num).toDouble(),
@@ -82,6 +86,7 @@ class SalePayment {
         note: json['note'] as String?,
         createdAt: DateTime.parse(json['createdAt'] as String),
         userName: json['userName'] as String?,
+        receiptNumber: json['receiptNumber'] as String?,
       );
 }
 
@@ -95,6 +100,8 @@ class Sale {
     required this.warehouseName,
     required this.status,
     required this.saleDate,
+    this.dueDate,
+    this.daysOverdue = 0,
     this.notes,
     required this.subtotal,
     required this.discount,
@@ -118,6 +125,12 @@ class Sale {
   final String warehouseName;
   final SaleStatus status;
   final DateTime saleDate;
+
+  /// The sale date plus the customer's payment terms (null for walk-ins).
+  final DateTime? dueDate;
+
+  /// Days past [dueDate] with something still unpaid (0 otherwise).
+  final int daysOverdue;
   final String? notes;
   final double subtotal;
   final double discount;
@@ -149,6 +162,8 @@ class Sale {
         warehouseName: json['warehouseName'] as String? ?? 'Warehouse',
         status: json['status'] == 'voided' ? SaleStatus.voided : SaleStatus.completed,
         saleDate: DateTime.parse(json['saleDate'] as String),
+        dueDate: DateTime.tryParse(json['dueDate'] as String? ?? '')?.toLocal(),
+        daysOverdue: (json['daysOverdue'] as num?)?.toInt() ?? 0,
         notes: json['notes'] as String?,
         subtotal: (json['subtotal'] as num?)?.toDouble() ?? 0,
         discount: (json['discount'] as num?)?.toDouble() ?? 0,

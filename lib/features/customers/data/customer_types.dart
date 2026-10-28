@@ -15,12 +15,14 @@ class CustomerType {
     required this.id,
     required this.name,
     this.defaultCreditLimit = 0,
+    this.defaultPaymentTermsDays = 30,
     this.customerCount = 0,
   });
 
   final String id;
   final String name;
   final double defaultCreditLimit;
+  final int defaultPaymentTermsDays;
 
   /// Customers of this type, archived ones included.
   final int customerCount;
@@ -29,6 +31,7 @@ class CustomerType {
         id: json['id'] as String,
         name: json['name'] as String,
         defaultCreditLimit: (json['defaultCreditLimit'] as num?)?.toDouble() ?? 0,
+        defaultPaymentTermsDays: (json['defaultPaymentTermsDays'] as num?)?.toInt() ?? 30,
         customerCount: (json['customerCount'] as num?)?.toInt() ?? 0,
       );
 }
@@ -48,18 +51,20 @@ class CustomerTypesRepository {
     ];
   }
 
-  Future<CustomerType> create(String name, {double defaultCreditLimit = 0}) async {
+  Future<CustomerType> create(String name, {double defaultCreditLimit = 0, int defaultPaymentTermsDays = 30}) async {
     final json = await _api.post(ApiConstants.customerTypes, {
       'name': name,
       'defaultCreditLimit': defaultCreditLimit,
+      'defaultPaymentTermsDays': defaultPaymentTermsDays,
     });
     return CustomerType.fromJson(json['customerType'] as Map<String, dynamic>);
   }
 
-  Future<CustomerType> update(String id, {String? name, double? defaultCreditLimit}) async {
+  Future<CustomerType> update(String id, {String? name, double? defaultCreditLimit, int? defaultPaymentTermsDays}) async {
     final json = await _api.patch(ApiConstants.customerType(id), {
       'name': ?name,
       'defaultCreditLimit': ?defaultCreditLimit,
+      'defaultPaymentTermsDays': ?defaultPaymentTermsDays,
     });
     return CustomerType.fromJson(json['customerType'] as Map<String, dynamic>);
   }
@@ -84,15 +89,22 @@ class CustomerTypesNotifier extends AsyncNotifier<List<CustomerType>> {
     state = await AsyncValue.guard(ref.read(customerTypesRepositoryProvider).list);
   }
 
-  Future<CustomerType> add(String name, {double defaultCreditLimit = 0}) async {
-    final type = await ref.read(customerTypesRepositoryProvider).create(name, defaultCreditLimit: defaultCreditLimit);
+  Future<CustomerType> add(String name, {double defaultCreditLimit = 0, int defaultPaymentTermsDays = 30}) async {
+    final type = await ref
+        .read(customerTypesRepositoryProvider)
+        .create(name, defaultCreditLimit: defaultCreditLimit, defaultPaymentTermsDays: defaultPaymentTermsDays);
     await refresh();
     return type;
   }
 
   /// A rename shows on every customer of the type, so they are re-read too.
-  Future<void> edit(String id, {String? name, double? defaultCreditLimit}) async {
-    await ref.read(customerTypesRepositoryProvider).update(id, name: name, defaultCreditLimit: defaultCreditLimit);
+  Future<void> edit(String id, {String? name, double? defaultCreditLimit, int? defaultPaymentTermsDays}) async {
+    await ref.read(customerTypesRepositoryProvider).update(
+          id,
+          name: name,
+          defaultCreditLimit: defaultCreditLimit,
+          defaultPaymentTermsDays: defaultPaymentTermsDays,
+        );
     await Future.wait([refresh(), ref.read(partiesProvider(PartyType.customer).notifier).refresh()]);
   }
 

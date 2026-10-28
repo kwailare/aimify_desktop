@@ -79,12 +79,14 @@ class SalesRepository {
     return Sale.fromJson(json['sale'] as Map<String, dynamic>);
   }
 
-  /// Returns the sale and how much is now owed back to the customer.
-  Future<({Sale sale, double refundOwed})> voidSale(String id, {required String reason}) async {
+  /// Returns the sale, how much is owed back to the customer, and how much
+  /// of what they paid went to their other debts instead.
+  Future<({Sale sale, double refundOwed, double creditedToAccount})> voidSale(String id, {required String reason}) async {
     final json = await _api.post(ApiConstants.saleVoid(id), {'reason': reason});
     return (
       sale: Sale.fromJson(json['sale'] as Map<String, dynamic>),
       refundOwed: (json['refundOwed'] as num?)?.toDouble() ?? 0,
+      creditedToAccount: (json['creditedToAccount'] as num?)?.toDouble() ?? 0,
     );
   }
 }
@@ -96,6 +98,8 @@ class SalesNotifier extends AsyncNotifier<List<Sale>> {
   Future<List<Sale>> build() async {
     if (ref.watch(sessionUserIdProvider) == null) return const [];
     if (!ref.watch(holdsPermissionProvider(Permissions.salesView))) return const [];
+    // A payment on a customer's account can settle sales.
+    ref.watch(debtsChangedProvider);
     return ref.watch(salesRepositoryProvider).list();
   }
 
@@ -128,10 +132,10 @@ class SalesNotifier extends AsyncNotifier<List<Sale>> {
     return sale;
   }
 
-  Future<double> voidSale(String id, {required String reason}) async {
+  Future<({double refundOwed, double creditedToAccount})> voidSale(String id, {required String reason}) async {
     final result = await ref.read(salesRepositoryProvider).voidSale(id, reason: reason);
     await _afterChange(saleId: id, stockMoved: true);
-    return result.refundOwed;
+    return (refundOwed: result.refundOwed, creditedToAccount: result.creditedToAccount);
   }
 
   /// Sales touch stock, the customer's balance and the valuation, so
@@ -157,9 +161,10 @@ class SalesNotifier extends AsyncNotifier<List<Sale>> {
 final salesProvider = AsyncNotifierProvider<SalesNotifier, List<Sale>>(SalesNotifier.new);
 
 /// One sale with its payments, straight from the server.
-final saleDetailProvider = FutureProvider.autoDispose.family<Sale, String>(
-  (ref, id) => ref.watch(salesRepositoryProvider).get(id),
-);
+final saleDetailProvider = FutureProvider.autoDispose.family<Sale, String>((ref, id) {
+  ref.watch(debtsChangedProvider);
+  return ref.watch(salesRepositoryProvider).get(id);
+});
 
 /// All of one customer's sales (not only the latest 200 of everyone's),
 /// for the customer's page.
@@ -167,6 +172,7 @@ final customerSaleHistoryProvider = FutureProvider.autoDispose.family<List<Sale>
   if (customerId.startsWith('local:') || !ref.watch(holdsPermissionProvider(Permissions.salesView))) {
     return const <Sale>[];
   }
+  ref.watch(debtsChangedProvider);
   return ref.watch(salesRepositoryProvider).listForCustomer(customerId);
 });
 

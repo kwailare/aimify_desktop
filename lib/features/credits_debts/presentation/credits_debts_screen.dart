@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../shared/utils/formatters.dart';
 import '../../../shared/widgets/section_header.dart';
@@ -11,6 +12,7 @@ import '../../parties/data/parties_repository.dart';
 import '../../parties/domain/party.dart';
 import '../../parties/presentation/credit_entry_dialog.dart';
 import '../../parties/presentation/party_history_dialog.dart';
+import 'debt_report_view.dart';
 
 /// Money owed to the business (customer balances) and money the business
 /// owes (supplier balances), in one place. It is a view over the same live
@@ -33,7 +35,7 @@ class _CreditsDebtsScreenState extends ConsumerState<CreditsDebtsScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
   }
 
   @override
@@ -118,6 +120,8 @@ class _CreditsDebtsScreenState extends ConsumerState<CreditsDebtsScreen>
               tabs: const [
                 Tab(text: 'Customers who owe you'),
                 Tab(text: 'Suppliers you owe'),
+                Tab(key: Key('tab-aging'), text: 'Aging report'),
+                Tab(key: Key('tab-chase'), text: 'Who to chase'),
               ],
             ),
             const SizedBox(height: 12),
@@ -141,6 +145,8 @@ class _CreditsDebtsScreenState extends ConsumerState<CreditsDebtsScreen>
                     emptyMessage: "You don't owe any supplier anything right now.",
                     deniedMessage: "Your role can't view suppliers.",
                   ),
+                  const DebtAgingView(),
+                  const WhoToChaseView(),
                 ],
               ),
             ),
@@ -197,10 +203,10 @@ class _DebtsTable extends ConsumerWidget {
             rows: [
               for (final party in owing)
                 DataRow(
-                  onSelectChanged: (_) => showDialog(
-                    context: context,
-                    builder: (_) => PartyHistoryDialog(party: party),
-                  ),
+                  // A customer opens their page; a supplier, their account.
+                  onSelectChanged: (_) => isCustomer
+                      ? context.go('/customers/${party.id}')
+                      : showDialog(context: context, builder: (_) => PartyHistoryDialog(party: party)),
                   cells: [
                     DataCell(
                       ConstrainedBox(
@@ -223,10 +229,7 @@ class _DebtsTable extends ConsumerWidget {
                         child: TextButton(
                           onPressed: !canRecord
                               ? null
-                              : () => showDialog(
-                                    context: context,
-                                    builder: (_) => CreditEntryDialog(party: party, kind: CreditKind.payment),
-                                  ),
+                              : () => recordCreditEntry(context, ref, party, CreditKind.payment),
                           child: const Text('Record payment'),
                         ),
                       ),

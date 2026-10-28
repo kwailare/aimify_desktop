@@ -119,6 +119,7 @@ class PartiesRepository {
     required CreditKind kind,
     required double amount,
     String? note,
+    String? method,
     String? clientRef,
   }) async {
     final json = await _api.post(ApiConstants.creditEntries, {
@@ -127,6 +128,7 @@ class PartiesRepository {
       'kind': kind.apiValue,
       'amount': amount,
       if (note != null && note.trim().isNotEmpty) 'note': note.trim(),
+      if (kind == CreditKind.payment && method != null) 'method': method,
       'clientRef': ?clientRef,
     });
     return (
@@ -314,6 +316,7 @@ class CreditService {
     required CreditKind kind,
     required double amount,
     String? note,
+    String? method,
   }) async {
     final op = OutboxOp(
       id: newOpId(),
@@ -324,6 +327,7 @@ class CreditService {
         'kind': kind.apiValue,
         'amount': amount,
         'note': (note == null || note.trim().isEmpty) ? null : note.trim(),
+        'method': method,
       },
       createdAt: DateTime.now(),
     );
@@ -338,6 +342,7 @@ class CreditService {
                 kind: kind,
                 amount: amount,
                 note: note,
+                method: method,
                 clientRef: op.id,
               ),
         );
@@ -347,9 +352,15 @@ class CreditService {
         _ref.read(partiesProvider(partyType).notifier).refresh(),
         _ref.read(creditEntriesProvider((type: partyType, id: partyId)).notifier).refresh(),
       ]);
+      // A payment can settle sales or purchases: those screens re-read.
+      _ref.invalidate(debtsChangedProvider);
     }
     return result;
   }
 }
 
 final creditServiceProvider = Provider<CreditService>((ref) => CreditService(ref));
+
+/// Bumped (invalidated) whenever a ledger entry may have settled sales or
+/// purchases, so the screens showing them re-read. Watch it to refresh.
+final debtsChangedProvider = Provider<Object>((ref) => Object());

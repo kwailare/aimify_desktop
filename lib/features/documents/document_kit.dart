@@ -232,8 +232,8 @@ class DocumentKit {
       );
 
   /// A faint diagonal word across the page (DRAFT, CANCELLED).
-  pw.PageTheme pageTheme({String? watermark}) => pw.PageTheme(
-        pageFormat: PdfPageFormat.a4,
+  pw.PageTheme pageTheme({String? watermark, bool landscape = false}) => pw.PageTheme(
+        pageFormat: landscape ? PdfPageFormat.a4.landscape : PdfPageFormat.a4,
         margin: const pw.EdgeInsets.fromLTRB(36, 36, 36, 30),
         theme: theme,
         buildBackground: watermark == null

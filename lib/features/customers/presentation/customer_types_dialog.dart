@@ -21,6 +21,7 @@ class CustomerTypesDialog extends ConsumerStatefulWidget {
 class _CustomerTypesDialogState extends ConsumerState<CustomerTypesDialog> {
   final _name = TextEditingController();
   final _limit = TextEditingController(text: '0');
+  final _terms = TextEditingController(text: '30');
   bool _busy = false;
   String? _error;
 
@@ -28,6 +29,7 @@ class _CustomerTypesDialogState extends ConsumerState<CustomerTypesDialog> {
   void dispose() {
     _name.dispose();
     _limit.dispose();
+    _terms.dispose();
     super.dispose();
   }
 
@@ -48,23 +50,31 @@ class _CustomerTypesDialogState extends ConsumerState<CustomerTypesDialog> {
   Future<void> _add() async {
     final name = _name.text.trim();
     final limit = double.tryParse(_limit.text.trim());
+    final terms = int.tryParse(_terms.text.trim());
     if (name.isEmpty) return setState(() => _error = 'Enter a name for the type.');
     if (limit == null || limit < 0) return setState(() => _error = 'The default limit must be 0 or more.');
+    if (terms == null || terms < 0 || terms > 365) return setState(() => _error = 'Terms must be 0 to 365 days.');
     await _run(() async {
-      await ref.read(customerTypesProvider.notifier).add(name, defaultCreditLimit: limit);
+      await ref.read(customerTypesProvider.notifier).add(name, defaultCreditLimit: limit, defaultPaymentTermsDays: terms);
       _name.clear();
       _limit.text = '0';
+      _terms.text = '30';
     });
   }
 
   Future<void> _edit(CustomerType type) async {
-    final result = await showDialog<({String name, double limit})>(
+    final result = await showDialog<({String name, double limit, int terms})>(
       context: context,
       builder: (_) => _EditTypeDialog(type: type),
     );
     if (result == null) return;
     await _run(
-      () => ref.read(customerTypesProvider.notifier).edit(type.id, name: result.name, defaultCreditLimit: result.limit),
+      () => ref.read(customerTypesProvider.notifier).edit(
+            type.id,
+            name: result.name,
+            defaultCreditLimit: result.limit,
+            defaultPaymentTermsDays: result.terms,
+          ),
     );
   }
 
@@ -107,6 +117,7 @@ class _CustomerTypesDialogState extends ConsumerState<CustomerTypesDialog> {
                         title: Text(t.name, style: const TextStyle(fontWeight: FontWeight.w600)),
                         subtitle: Text(
                           '${t.defaultCreditLimit > 0 ? 'Default limit ${currencyFormat.format(t.defaultCreditLimit)}' : 'No default limit'}'
+                          ' · ${t.defaultPaymentTermsDays}-day terms'
                           ' · ${t.customerCount} customer${t.customerCount == 1 ? '' : 's'}',
                         ),
                         trailing: Row(
@@ -157,6 +168,17 @@ class _CustomerTypesDialogState extends ConsumerState<CustomerTypesDialog> {
                   ),
                 ),
                 const SizedBox(width: 8),
+                Expanded(
+                  flex: 2,
+                  child: TextField(
+                    key: const Key('customer-type-terms'),
+                    controller: _terms,
+                    enabled: !_busy,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(labelText: 'Terms (days)', isDense: true),
+                  ),
+                ),
+                const SizedBox(width: 8),
                 ElevatedButton(
                   key: const Key('customer-type-add'),
                   onPressed: _busy ? null : _add,
@@ -188,12 +210,14 @@ class _EditTypeDialog extends StatefulWidget {
 class _EditTypeDialogState extends State<_EditTypeDialog> {
   late final _name = TextEditingController(text: widget.type.name);
   late final _limit = TextEditingController(text: _plain(widget.type.defaultCreditLimit));
+  late final _terms = TextEditingController(text: '${widget.type.defaultPaymentTermsDays}');
   String? _error;
 
   @override
   void dispose() {
     _name.dispose();
     _limit.dispose();
+    _terms.dispose();
     super.dispose();
   }
 
@@ -202,7 +226,9 @@ class _EditTypeDialogState extends State<_EditTypeDialog> {
     final limit = double.tryParse(_limit.text.trim());
     if (name.isEmpty) return setState(() => _error = 'Enter a name.');
     if (limit == null || limit < 0) return setState(() => _error = 'The default limit must be 0 or more.');
-    Navigator.of(context).pop((name: name, limit: limit));
+    final terms = int.tryParse(_terms.text.trim());
+    if (terms == null || terms < 0 || terms > 365) return setState(() => _error = 'Terms must be 0 to 365 days.');
+    Navigator.of(context).pop((name: name, limit: limit, terms: terms));
   }
 
   @override
@@ -225,6 +251,16 @@ class _EditTypeDialogState extends State<_EditTypeDialog> {
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
                 decoration: const InputDecoration(
                   labelText: 'Default credit limit',
+                  helperText: 'For customers added from now on',
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                key: const Key('edit-type-terms'),
+                controller: _terms,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Default payment terms (days)',
                   helperText: 'For customers added from now on',
                 ),
               ),

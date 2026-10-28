@@ -91,9 +91,13 @@ class _CustomerProfileScreenState extends ConsumerState<CustomerProfileScreen> {
     final canSeeSales = hasPermission(ref, Permissions.salesView);
     final typeName = ref.watch(customerTypeNameProvider(c));
     final left = c.creditLeft;
+    final overdue = ref
+        .watch(creditLedgerProvider((type: PartyType.customer, id: c.id)))
+        .where((e) => e.isOverdue)
+        .fold(0.0, (sum, e) => sum + e.openAmount);
 
     void entry(CreditKind kind) =>
-        showDialog(context: context, builder: (_) => CreditEntryDialog(party: c, kind: kind));
+        recordCreditEntry(context, ref, c, kind);
 
     return Scaffold(
       body: SingleChildScrollView(
@@ -199,13 +203,16 @@ class _CustomerProfileScreenState extends ConsumerState<CustomerProfileScreen> {
                   key: const Key('customer-stat-owes'),
                   label: 'Owes you',
                   value: currencyFormat.format(c.balanceOwed),
-                  caption: left == null
-                      ? 'No credit limit set'
-                      : left <= 0
-                          ? 'At their limit of ${currencyFormat.format(c.creditLimit)}'
-                          : '${currencyFormat.format(left)} of credit left',
+                  caption: [
+                    if (overdue > 0) '${currencyFormat.format(overdue)} overdue',
+                    left == null
+                        ? 'No credit limit set'
+                        : left <= 0
+                            ? 'At their limit of ${currencyFormat.format(c.creditLimit)}'
+                            : '${currencyFormat.format(left)} of credit left',
+                  ].join(' · '),
                   icon: Icons.account_balance_wallet_outlined,
-                  accentColor: c.isAtCreditLimit ? theme.colorScheme.error : (c.balanceOwed > 0 ? const Color(0xFFB7791F) : null),
+                  accentColor: c.isAtCreditLimit || overdue > 0 ? theme.colorScheme.error : (c.balanceOwed > 0 ? const Color(0xFFB7791F) : null),
                 ),
                 StatCard(
                   key: const Key('customer-stat-bought'),
@@ -225,7 +232,7 @@ class _CustomerProfileScreenState extends ConsumerState<CustomerProfileScreen> {
                 StatCard(
                   label: 'Credit limit',
                   value: c.creditLimit > 0 ? currencyFormat.format(c.creditLimit) : 'None',
-                  caption: typeName == null ? 'No type' : 'Type: $typeName',
+                  caption: [typeName ?? 'No type', '${c.paymentTermsDays}-day terms'].join(' · '),
                   icon: Icons.speed_outlined,
                 ),
               ],
@@ -299,6 +306,7 @@ class _SalesTab extends ConsumerWidget {
             DataColumn(label: Text('Units'), numeric: true),
             DataColumn(label: Text('Total'), numeric: true),
             DataColumn(label: Text('Still due'), numeric: true),
+            DataColumn(label: Text('Due')),
             DataColumn(label: Text('Payment')),
           ],
           rows: [
@@ -318,6 +326,7 @@ class _SalesTab extends ConsumerWidget {
                     ),
                   ),
                   DataCell(Text(s.balance > 0.004 ? currencyFormat.format(s.balance) : '—')),
+                  DataCell(saleDueCell(s, theme)),
                   DataCell(salePaymentPill(s)),
                 ],
               ),
@@ -372,7 +381,7 @@ class _AccountTab extends ConsumerWidget {
             else if (entries.isEmpty)
               const Padding(padding: EdgeInsets.only(top: 12), child: Text('Nothing on their account yet.'))
             else
-              for (final e in entries) CreditEntryRow(entry: e, myId: myId, theme: theme),
+              for (final e in entries) CreditEntryRow(entry: e, myId: myId, theme: theme, party: customer),
           ],
         ),
       ),

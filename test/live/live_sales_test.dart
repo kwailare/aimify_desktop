@@ -195,10 +195,12 @@ void main() {
 
       // Void the credit sale: its 2 bags come back and its 30000 balance
       // leaves the account; 90000 paid is owed back.
-      final refund = await notifier.voidSale(onCredit.id, reason: 'Live test');
-      expect(refund, 90000);
+      final voided = await notifier.voidSale(onCredit.id, reason: 'Live test');
+      // The 90000 paid on it settles their other invoice first: nothing to refund.
+      expect(voided.creditedToAccount, 90000);
+      expect(voided.refundOwed, 0);
       expect(lagosStock(), 3);
-      expect(owed(), 60000, reason: '230000 - 50000 paid, - 120000 reversed: the 90000 they paid on it now counts in their favour');
+      expect(owed(), 60000, reason: '230000 - 50000 paid - 120000 reversed');
       await _refused(() => repo.voidSale(onCredit.id, reason: 'again'), 'sale_not_voidable');
       await _refused(() => repo.pay(onCredit.id, amount: 1, method: SalePaymentMethod.cash), 'sale_voided');
 

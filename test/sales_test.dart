@@ -284,7 +284,7 @@ void main() {
       await _addProduct(tester, 'Rice · SKU-1');
       await tester.enterText(find.byKey(const Key('sale-paid')), '50');
       await _settle(tester);
-      expect(find.text('On credit ₦100'), findsOneWidget);
+      expect(find.textContaining('On credit ₦100 · due'), findsOneWidget);
       await tester.tap(find.byKey(const Key('sale-method')));
       await _settle(tester);
       await tester.tap(find.text('Bank transfer').last);
@@ -535,7 +535,7 @@ void main() {
       await _open(tester);
       await tester.tap(find.byKey(const Key('sale-void')));
       await _settle(tester);
-      expect(find.textContaining('refund it'), findsOneWidget);
+      expect(find.textContaining('first settles their other invoices'), findsOneWidget);
       expect(tester.widget<ElevatedButton>(find.byKey(const Key('void-confirm'))).onPressed, isNull);
       await tester.enterText(find.byKey(const Key('void-reason')), 'Entered twice');
       await _settle(tester);
