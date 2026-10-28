@@ -1002,9 +1002,38 @@ the type's `defaultCreditLimit` (otherwise `0`) and `defaultPaymentTermsDays`
 `PATCH` with `"status": "active"` restores an archived record (needs
 `.archive`; logged as `customer.restored` / `supplier.restored`).
 
-Customers also carry, read-only: `customerTypeName` (`null` without a type),
+Every row also carries `overdue`: the part of the balance that is past its due
+date. Customers carry, read-only: `customerTypeName` (`null` without a type),
 and what they have bought on completed sales (voided ones don't count):
-`totalSales`, `salesCount` and `lastSaleAt` (`null` if none).
+`totalSales`, `salesCount` and `lastSaleAt` (`null` if none). Suppliers carry
+what has been bought from them on purchases that reached their account
+(received at least in part, never cancelled): `totalPurchases`,
+`purchaseCount` and `lastPurchaseAt` (the latest order date).
+
+### `GET /api/v1/suppliers/{id}/prices`
+
+Needs `suppliers.view`. What each product has cost from this supplier, from
+every purchase except drafts and cancelled ones, sorted by product name:
+
+```json
+{
+  "products": [
+    {
+      "productId": "uuid", "name": "Rice 50kg", "sku": "RICE-50", "unit": "bag",
+      "currentCost": 65000,
+      "lastCost": 70000, "lastDate": "2026-10-20T00:00:00.000Z", "lastReference": "PO-0014",
+      "previousCost": 65000, "change": 5000, "changePercent": 7.69, "timesBought": 3,
+      "history": [
+        { "date": "2026-10-20T00:00:00.000Z", "reference": "PO-0014", "purchaseId": "uuid", "unitCost": 70000, "quantity": 4 }
+      ]
+    }
+  ]
+}
+```
+
+`currentCost` is the product's purchase price now. `history` is newest first,
+up to ten. `previousCost`, `change` and `changePercent` are `null` for a
+product bought once. `404` for another organization's supplier.
 
 ```json
 {

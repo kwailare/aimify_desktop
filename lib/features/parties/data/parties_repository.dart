@@ -25,10 +25,9 @@ class PartiesRepository {
   String _listUrl(PartyType type) =>
       type == PartyType.customer ? ApiConstants.customers : ApiConstants.suppliers;
 
-  /// Customers are read with the archived ones (the Customers screen can
-  /// show and restore them); screens that pick a customer leave them out.
-  String _readUrl(PartyType type) =>
-      type == PartyType.customer ? '${ApiConstants.customers}?includeArchived=true' : ApiConstants.suppliers;
+  /// Read with the archived ones (the Customers and Suppliers screens can
+  /// show and restore them); screens that pick one leave them out.
+  String _readUrl(PartyType type) => '${_listUrl(type)}?includeArchived=true';
 
   String _itemUrl(PartyType type, String id) =>
       type == PartyType.customer ? ApiConstants.customer(id) : ApiConstants.supplier(id);

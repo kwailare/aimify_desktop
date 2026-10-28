@@ -14,7 +14,7 @@ import '../../parties/data/parties_repository.dart';
 import '../../parties/domain/party.dart';
 import '../../parties/presentation/credit_entry_dialog.dart';
 import '../../parties/presentation/party_form_dialog.dart';
-import '../../parties/presentation/party_history_dialog.dart';
+import '../../parties/presentation/credit_entry_row.dart';
 import '../../sales/data/sales_repository.dart';
 import '../../sales/domain/sale.dart';
 import '../../sales/presentation/sale_detail_dialog.dart';

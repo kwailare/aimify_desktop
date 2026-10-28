@@ -35,6 +35,18 @@ class PurchasesRepository {
 
   final AuthedApi _api;
 
+  /// One supplier's purchases, newest first (up to 200).
+  Future<List<Purchase>> listForSupplier(String supplierId) async {
+    final json = await _api.get(
+      '${ApiConstants.purchases}?supplierId=$supplierId&limit=200',
+      cacheKey: 'purchases_supplier_$supplierId',
+    );
+    return [
+      for (final row in (json['purchases'] as List<dynamic>? ?? const []))
+        Purchase.fromJson(row as Map<String, dynamic>),
+    ];
+  }
+
   Future<List<Purchase>> list() async {
     final json = await _api.get(ApiConstants.purchases, cacheKey: 'purchases');
     return [
@@ -190,8 +202,13 @@ class PurchasesNotifier extends AsyncNotifier<List<Purchase>> {
     ]);
     ref.invalidate(creditEntriesProvider);
     ref.invalidate(valuationReportProvider);
+    ref.invalidate(purchasesChangedProvider);
   }
 }
+
+/// Invalidated after any purchase change, so a supplier's purchases and
+/// prices are re-read.
+final purchasesChangedProvider = Provider<Object>((ref) => Object());
 
 final purchasesProvider = AsyncNotifierProvider<PurchasesNotifier, List<Purchase>>(
   PurchasesNotifier.new,
@@ -204,6 +221,17 @@ final purchaseDetailProvider = FutureProvider.autoDispose.family<Purchase, Strin
 });
 
 /// Purchases from one supplier, for the supplier's history.
+/// All of one supplier's purchases (not only the latest of everyone's), for
+/// the supplier's page.
+final supplierPurchaseHistoryProvider = FutureProvider.autoDispose.family<List<Purchase>, String>((ref, supplierId) {
+  if (supplierId.startsWith('local:') || !ref.watch(holdsPermissionProvider(Permissions.purchasesView))) {
+    return const <Purchase>[];
+  }
+  ref.watch(debtsChangedProvider);
+  ref.watch(purchasesChangedProvider);
+  return ref.watch(purchasesRepositoryProvider).listForSupplier(supplierId);
+});
+
 final supplierPurchasesProvider = Provider.family<List<Purchase>, String>((ref, supplierId) {
   final all = ref.watch(purchasesProvider).valueOrNull ?? const <Purchase>[];
   return all.where((p) => p.supplierId == supplierId).toList();

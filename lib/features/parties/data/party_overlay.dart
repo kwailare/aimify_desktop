@@ -34,12 +34,8 @@ List<Party> overlayParties(List<Party> base, List<OutboxOp> ops, PartyType type)
       case OpKind.partyArchive:
         if (PartyTypeX.fromApi(op.payload['type'] as String) != type) continue;
         final i = indexOf(op.payload['id'] as String);
-        // Customers stay listed as archived (they can be restored); suppliers leave.
-        if (i >= 0 && type == PartyType.customer) {
-          parties[i] = parties[i].copyWith(isActive: false);
-        } else if (i >= 0) {
-          parties.removeAt(i);
-        }
+        // Stays listed as archived (it can be restored).
+        if (i >= 0) parties[i] = parties[i].copyWith(isActive: false);
       case OpKind.creditEntry:
         if (PartyTypeX.fromApi(op.payload['partyType'] as String) != type) continue;
         final i = indexOf(op.payload['partyId'] as String);

@@ -7,7 +7,7 @@ import 'package:aimify_desktop/features/auth/domain/auth_models.dart';
 import 'package:aimify_desktop/features/auth/presentation/auth_controller.dart';
 import 'package:aimify_desktop/features/parties/data/supplier_options.dart';
 import 'package:aimify_desktop/features/parties/domain/party.dart';
-import 'package:aimify_desktop/features/parties/presentation/party_history_dialog.dart';
+import 'package:aimify_desktop/features/suppliers/presentation/supplier_profile_screen.dart';
 import 'package:aimify_desktop/features/products/data/product_excel_import.dart';
 import 'package:aimify_desktop/features/products/domain/product.dart';
 import 'package:aimify_desktop/features/products/presentation/product_form_dialog.dart';
@@ -210,9 +210,9 @@ void main() {
       expect(find.text('Old Mills (archived)'), findsOneWidget, reason: 'shown as the current value');
     });
 
-    testWidgets('a supplier\'s detail lists the products it supplies', (tester) async {
+    testWidgets("a supplier's page lists the products it supplies", (tester) async {
       final supplier = fixtureParty('s1', type: PartyType.supplier, name: 'Dangote Foods Ltd');
-      await _pump(tester, PartyHistoryDialog(party: supplier), [
+      await _pump(tester, const SupplierProfileScreen(supplierId: 's1'), [
         authControllerProvider.overrideWith(() => _Auth(defaultPermissionsFor('Warehouse Manager'))),
         ...fakeDataOverrides(
           products: FakeProductsRepository([
@@ -223,19 +223,14 @@ void main() {
           parties: FakePartiesRepository(suppliers: [supplier]),
         ),
       ]);
-      expect(find.text('Products supplied (2)'), findsOneWidget);
-      expect(find.text('Rice'), findsOneWidget);
-      expect(find.text('Semovita'), findsOneWidget);
-      expect(find.text('Beans'), findsNothing);
-    });
-
-    testWidgets('customers have no Products supplied section', (tester) async {
-      final customer = fixtureParty('c1', name: 'Mama Ngozi');
-      await _pump(tester, PartyHistoryDialog(party: customer), [
-        authControllerProvider.overrideWith(() => _Auth(defaultPermissionsFor('Owner'))),
-        ...fakeDataOverrides(parties: FakePartiesRepository(customers: [customer])),
-      ]);
-      expect(find.byKey(const Key('products-supplied')), findsNothing);
+      await tester.tap(find.text('Products & prices'));
+      for (var i = 0; i < 4; i++) {
+        await tester.pump(const Duration(milliseconds: 300));
+      }
+      expect(find.textContaining('Rice ·'), findsOneWidget);
+      expect(find.textContaining('Semovita ·'), findsOneWidget);
+      expect(find.textContaining('Beans'), findsNothing);
+      expect(find.text('Not bought from them yet'), findsNWidgets(2));
     });
   });
 

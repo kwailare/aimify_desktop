@@ -17,7 +17,7 @@ import 'package:aimify_desktop/features/parties/data/parties_repository.dart';
 import 'package:aimify_desktop/features/parties/domain/party.dart';
 import 'package:aimify_desktop/features/parties/presentation/credit_entry_dialog.dart';
 import 'package:aimify_desktop/features/parties/presentation/party_form_dialog.dart';
-import 'package:aimify_desktop/features/parties/presentation/party_history_dialog.dart';
+import 'package:aimify_desktop/features/customers/presentation/customer_profile_screen.dart';
 import 'package:aimify_desktop/features/sales/domain/sale.dart';
 import 'package:aimify_desktop/features/sales/presentation/sales_screen.dart';
 import 'package:excel/excel.dart';
@@ -309,12 +309,9 @@ void main() {
         ),
         _payment(),
       ]);
-      final (opener, _) = await _pump(
-        tester,
-        _opener((context, ref) => showDialog(context: context, builder: (_) => PartyHistoryDialog(party: repo.customers.single))),
-        parties: repo,
-      );
-      await _open(tester);
+      final (opener, _) = await _pump(tester, const CustomerProfileScreen(customerId: 'c1'), parties: repo);
+      await tester.tap(find.text('Account history'));
+      await _settle(tester);
       expect(find.text('12 days overdue'), findsOneWidget);
       expect(find.textContaining('₦3,000 open, due'), findsOneWidget);
       expect(find.textContaining('RCPT-0003 · Bank transfer'), findsOneWidget);

@@ -7,13 +7,14 @@ import 'package:aimify_desktop/features/auth/domain/auth_models.dart';
 import 'package:aimify_desktop/features/auth/presentation/auth_controller.dart';
 import 'package:aimify_desktop/features/parties/data/parties_repository.dart';
 import 'package:aimify_desktop/features/parties/domain/party.dart';
-import 'package:aimify_desktop/features/parties/presentation/parties_screen.dart';
-import 'package:aimify_desktop/features/parties/presentation/party_history_dialog.dart';
 import 'package:aimify_desktop/features/sync/sync_engine.dart';
 import 'package:aimify_desktop/shared/offline/connection.dart';
 import 'package:aimify_desktop/shared/offline/outbox.dart';
 import 'package:aimify_desktop/shared/services/api_exception.dart';
 import 'package:aimify_desktop/shared/services/secure_token_storage.dart';
+import 'package:aimify_desktop/features/customers/presentation/customer_profile_screen.dart';
+import 'package:aimify_desktop/features/customers/presentation/customers_screen.dart';
+import 'package:aimify_desktop/features/suppliers/presentation/suppliers_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -370,7 +371,10 @@ void main() {
         await tester.pumpWidget(
           UncontrolledProviderScope(
             container: rig.container,
-            child: MaterialApp(theme: AppTheme.light(), home: PartiesScreen(type: type)),
+            child: MaterialApp(
+              theme: AppTheme.light(),
+              home: type == PartyType.customer ? const CustomersScreen() : const SuppliersScreen(),
+            ),
           ),
         );
         await tester.pump();
@@ -390,7 +394,7 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('Accountant reads but cannot add or edit, yet can record a payment', (tester) async {
+    testWidgets('Accountant reads but cannot add or edit', (tester) async {
       tester.view.physicalSize = const Size(1280, 800);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.resetPhysicalSize);
@@ -405,31 +409,22 @@ void main() {
       await tester.pumpWidget(
         UncontrolledProviderScope(
           container: rig.container,
-          child: MaterialApp(theme: AppTheme.light(), home: const PartiesScreen(type: PartyType.customer)),
+          child: MaterialApp(theme: AppTheme.light(), home: const CustomersScreen()),
         ),
       );
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
 
+      expect(find.text('Blessing Store'), findsOneWidget);
       expect(
         tester.widget<ElevatedButton>(find.widgetWithText(ElevatedButton, 'Add customer')).onPressed,
         isNull,
-      );
-
-      // The ledger opens, and the accountant can record a payment from it.
-      await tester.tap(find.text('Blessing Store'));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 300));
-      expect(find.byType(PartyHistoryDialog), findsOneWidget);
-      expect(
-        tester.widget<ElevatedButton>(find.widgetWithText(ElevatedButton, 'Record payment')).onPressed,
-        isNotNull,
       );
       expect(tester.takeException(), isNull);
     });
   });
 
-  group('the history dialog', () {
+  group("the customer's account history", () {
     testWidgets('lists the ledger, marking entries still waiting to sync', (tester) async {
       tester.view.physicalSize = const Size(1280, 900);
       tester.view.devicePixelRatio = 1.0;
@@ -448,21 +443,13 @@ void main() {
           container: rig.container,
           child: MaterialApp(
             theme: AppTheme.light(),
-            home: Scaffold(
-              body: Builder(
-                builder: (context) => ElevatedButton(
-                  onPressed: () => showDialog(
-                    context: context,
-                    builder: (_) => PartyHistoryDialog(party: rig.customers().single),
-                  ),
-                  child: const Text('open'),
-                ),
-              ),
-            ),
+            home: CustomerProfileScreen(customerId: rig.customers().single.id),
           ),
         ),
       );
-      await tester.tap(find.text('open'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.tap(find.text('Account history'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
 

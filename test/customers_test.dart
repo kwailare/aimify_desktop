@@ -188,7 +188,7 @@ void main() {
       expect(PartyInput.fromJson(PartyType.customer, customer.toJson()).customerTypeId, 't1');
     });
 
-    test('archiving offline keeps a customer, marked archived; a supplier leaves the list', () {
+    test('archiving offline keeps a customer or supplier listed, marked archived', () {
       OutboxOp archive(String type, String id) => OutboxOp(
             id: 'op-$id',
             kind: OpKind.partyArchive,
@@ -202,7 +202,7 @@ void main() {
         [archive('supplier', 's1')],
         PartyType.supplier,
       );
-      expect(suppliers, isEmpty);
+      expect(suppliers.single.isActive, isFalse);
     });
 
     test("a customer's page belongs to the Customers section", () {

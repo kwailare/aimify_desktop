@@ -39,11 +39,14 @@ String _plain(double value) =>
 /// purchase can be saved as a draft, placed as an order, or (for goods
 /// bought and collected on the spot) received straight away.
 class PurchaseFormDialog extends ConsumerStatefulWidget {
-  const PurchaseFormDialog({super.key, this.purchase, this.initialSupplierId});
+  const PurchaseFormDialog({super.key, this.purchase, this.initialSupplierId, this.initialLines = const []});
 
   /// The purchase being edited, or `null` for a new one.
   final Purchase? purchase;
   final String? initialSupplierId;
+
+  /// Lines a new purchase starts with (from the reorder suggestions).
+  final List<PurchaseLineInput> initialLines;
 
   @override
   ConsumerState<PurchaseFormDialog> createState() => _PurchaseFormDialogState();
@@ -62,6 +65,9 @@ class _PurchaseFormDialogState extends ConsumerState<PurchaseFormDialog> {
   late final List<_LineDraft> _lines = [
     for (final line in widget.purchase?.lines ?? const <PurchaseLine>[])
       _LineDraft(productId: line.productId, quantity: line.quantity, unitCost: line.unitCost),
+    if (widget.purchase == null)
+      for (final line in widget.initialLines)
+        _LineDraft(productId: line.productId, quantity: line.quantity, unitCost: line.unitCost),
   ];
   String? _pickedProductId;
   bool _saving = false;

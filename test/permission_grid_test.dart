@@ -4,8 +4,7 @@
 
 import 'package:aimify_desktop/features/auth/domain/auth_models.dart';
 import 'package:aimify_desktop/features/auth/presentation/auth_controller.dart';
-import 'package:aimify_desktop/features/parties/domain/party.dart';
-import 'package:aimify_desktop/features/parties/presentation/parties_screen.dart';
+import 'package:aimify_desktop/features/customers/presentation/customers_screen.dart';
 import 'package:aimify_desktop/features/products/data/products_repository.dart';
 import 'package:aimify_desktop/features/products/domain/product.dart';
 import 'package:aimify_desktop/features/products/presentation/products_screen.dart';
@@ -137,7 +136,7 @@ void main() {
 
   group('customers', () {
     testWidgets('Archive without Add or Edit', (tester) async {
-      await _pump(tester, const PartiesScreen(type: PartyType.customer), [
+      await _pump(tester, const CustomersScreen(), [
         authControllerProvider.overrideWith(() => _Auth(['customers.view', 'customers.archive'])),
         ...fakeDataOverrides(parties: FakePartiesRepository(customers: [fixtureParty('c1')])),
       ]);
@@ -147,7 +146,7 @@ void main() {
     });
 
     testWidgets('Add and Edit without Archive', (tester) async {
-      await _pump(tester, const PartiesScreen(type: PartyType.customer), [
+      await _pump(tester, const CustomersScreen(), [
         authControllerProvider.overrideWith(
           () => _Auth(['customers.view', 'customers.create', 'customers.edit']),
         ),

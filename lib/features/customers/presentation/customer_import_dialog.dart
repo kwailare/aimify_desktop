@@ -17,13 +17,16 @@ import '../data/customer_types.dart';
 
 enum _Step { pick, preview, importing, done }
 
-/// Adds customers from an `.xlsx`: download the template, pick a file, check
-/// the preview (rows with problems and names already in the list are left
-/// out), then import. Each customer is added like "Add customer" would (so
-/// offline they wait to sync), and an Opening balance is recorded as a
-/// charge on their account when the role may record credit.
+/// Adds customers (or, with [type], suppliers) from an `.xlsx`: download the
+/// template, pick a file, check the preview (rows with problems and names
+/// already in the list are left out), then import. Each one is added like
+/// "Add customer" would (so offline they wait to sync), and an Opening
+/// balance is recorded as a charge on their account when the role may
+/// record credit.
 class CustomerImportDialog extends ConsumerStatefulWidget {
-  const CustomerImportDialog({super.key, this.pickFile});
+  const CustomerImportDialog({super.key, this.pickFile, this.type = PartyType.customer});
+
+  final PartyType type;
 
   /// Stands in for the file picker in tests.
   final Future<({String name, List<int> bytes})?> Function()? pickFile;
@@ -42,16 +45,18 @@ class _CustomerImportDialogState extends ConsumerState<CustomerImportDialog> {
   int _queued = 0;
   final List<String> _problems = [];
 
+  String get _noun => widget.type.label.toLowerCase();
+
   void _toast(String message) => ScaffoldMessenger.of(context)
     ..hideCurrentSnackBar()
     ..showSnackBar(SnackBar(content: Text(message)));
 
   Future<void> _saveTemplate() async {
     try {
-      final bytes = Uint8List.fromList(buildCustomerImportTemplate());
+      final bytes = Uint8List.fromList(buildPartyImportTemplate(widget.type));
       final path = await FilePicker.platform.saveFile(
-        dialogTitle: 'Save customer template',
-        fileName: 'aimify-customer-import-template.xlsx',
+        dialogTitle: 'Save $_noun template',
+        fileName: 'aimify-$_noun-import-template.xlsx',
         bytes: bytes,
         type: FileType.custom,
         allowedExtensions: const ['xlsx'],
@@ -79,21 +84,22 @@ class _CustomerImportDialogState extends ConsumerState<CustomerImportDialog> {
     setState(() => _pickError = null);
     final file = await (widget.pickFile ?? _pickWithDialog)();
     if (file == null || !mounted) return;
-    List<CustomerType> types;
-    try {
-      types = await ref.read(customerTypesProvider.future);
-    } catch (_) {
-      types = const [];
+    var types = const <CustomerType>[];
+    if (widget.type == PartyType.customer) {
+      try {
+        types = await ref.read(customerTypesProvider.future);
+      } catch (_) {}
     }
     // Names already in the list are skipped, so the list must be loaded.
     try {
-      await ref.read(partiesProvider(PartyType.customer).future);
+      await ref.read(partiesProvider(widget.type).future);
     } catch (_) {}
     if (!mounted) return;
-    final parsed = parseCustomerWorkbook(
+    final parsed = parsePartyWorkbook(
       file.bytes,
+      type: widget.type,
       types: types,
-      existing: ref.read(partyListProvider(PartyType.customer)),
+      existing: ref.read(partyListProvider(widget.type)),
     );
     if (parsed.sheetError != null) {
       setState(() => _pickError = parsed.sheetError);
@@ -110,7 +116,7 @@ class _CustomerImportDialogState extends ConsumerState<CustomerImportDialog> {
     final rows = _parsed?.rows ?? const <ImportedCustomerRow>[];
     final canRecord = hasPermission(ref, Permissions.creditRecord);
     setState(() => _step = _Step.importing);
-    final customers = ref.read(partiesProvider(PartyType.customer).notifier);
+    final customers = ref.read(partiesProvider(widget.type).notifier);
 
     for (final row in rows) {
       if (!mounted) return;
@@ -123,7 +129,7 @@ class _CustomerImportDialogState extends ConsumerState<CustomerImportDialog> {
         if (row.openingBalance > 0 && canRecord && id != null) {
           try {
             await ref.read(creditServiceProvider).record(
-                  partyType: PartyType.customer,
+                  partyType: widget.type,
                   partyId: id,
                   kind: CreditKind.charge,
                   amount: row.openingBalance,
@@ -153,14 +159,19 @@ class _CustomerImportDialogState extends ConsumerState<CustomerImportDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Use the template, or any sheet whose first row has the headers: Name (required), Type, Phone, '
-              'Email, Address, Credit limit, Opening balance, Notes.',
+            Text(
+              widget.type == PartyType.customer
+                  ? 'Use the template, or any sheet whose first row has the headers: Name (required), Type, Phone, '
+                      'Email, Address, Credit limit, Payment terms, Opening balance, Notes.'
+                  : 'Use the template, or any sheet whose first row has the headers: Name (required), Contact person, '
+                      'Phone, Email, Address, Payment terms, Opening balance (what you owe them), Notes.',
             ),
             const SizedBox(height: 8),
             Text(
-              'A Type must match one of your customer types. An empty Credit limit takes the type\'s default. '
-              'Names already in your customer list are skipped.',
+              widget.type == PartyType.customer
+                  ? 'A Type must match one of your customer types. An empty Credit limit or Payment terms takes the '
+                      'type\'s default. Names already in your customer list are skipped.'
+                  : 'Payment terms are in days (30 if empty). Names already in your supplier list are skipped.',
               style: theme.textTheme.bodySmall?.copyWith(color: muted),
             ),
             const SizedBox(height: 16),
@@ -221,7 +232,10 @@ class _CustomerImportDialogState extends ConsumerState<CustomerImportDialog> {
                         [
                           'Row ${r.rowNumber}',
                           if (r.input.creditLimit > 0) 'limit ${currencyFormat.format(r.input.creditLimit)}',
-                          if (r.openingBalance > 0) 'owes ${currencyFormat.format(r.openingBalance)}',
+                          if (r.openingBalance > 0)
+                            widget.type == PartyType.customer
+                                ? 'owes ${currencyFormat.format(r.openingBalance)}'
+                                : 'you owe ${currencyFormat.format(r.openingBalance)}',
                           ...r.warnings,
                         ].join(' · '),
                       ),
@@ -253,7 +267,7 @@ class _CustomerImportDialogState extends ConsumerState<CustomerImportDialog> {
           children: [
             Text(
               [
-                '$_added customer${_added == 1 ? '' : 's'} added',
+                '$_added $_noun${_added == 1 ? '' : 's'} added',
                 if (_queued > 0) '$_queued saved on this computer to sync later',
               ].join(' · '),
               key: const Key('customer-import-done'),
@@ -265,7 +279,7 @@ class _CustomerImportDialogState extends ConsumerState<CustomerImportDialog> {
     };
 
     return AlertDialog(
-      title: const Text('Import customers'),
+      title: Text('Import ${widget.type.plural}'),
       content: SizedBox(width: 560, child: content),
       actions: [
         if (_step == _Step.preview)

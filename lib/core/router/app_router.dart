@@ -20,6 +20,7 @@ import '../../features/sales/presentation/sales_screen.dart';
 import '../../features/setup_wizard/data/setup_wizard_state.dart';
 import '../../features/setup_wizard/presentation/setup_wizard_screen.dart';
 import '../../features/subscription/presentation/subscription_locked_screen.dart';
+import '../../features/suppliers/presentation/supplier_profile_screen.dart';
 import '../../features/suppliers/presentation/suppliers_screen.dart';
 import '../../features/warehouses/presentation/warehouses_screen.dart';
 import '../../shared/widgets/app_shell.dart';
@@ -167,7 +168,16 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           ),
           StatefulShellBranch(
             routes: [
-              GoRoute(path: '/suppliers', builder: (context, state) => const SuppliersScreen()),
+              GoRoute(
+                path: '/suppliers',
+                builder: (context, state) => const SuppliersScreen(),
+                routes: [
+                  GoRoute(
+                    path: ':id',
+                    builder: (context, state) => SupplierProfileScreen(supplierId: state.pathParameters['id']!),
+                  ),
+                ],
+              ),
             ],
           ),
           StatefulShellBranch(

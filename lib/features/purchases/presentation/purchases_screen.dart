@@ -12,10 +12,12 @@ import '../../auth/domain/permissions.dart';
 import '../../auth/presentation/permissions_provider.dart';
 import '../../parties/data/supplier_options.dart';
 import '../data/purchases_repository.dart';
+import '../data/reorder.dart';
 import '../domain/purchase.dart';
 import 'import_legacy_purchases_dialog.dart';
 import 'purchase_detail_dialog.dart';
 import 'purchase_form_dialog.dart';
+import 'reorder_dialog.dart';
 
 enum _Filter { open, received, cancelled, all }
 
@@ -71,6 +73,7 @@ class _PurchasesScreenState extends ConsumerState<PurchasesScreen> {
         .where((o) => o.kind == OpKind.purchaseCreate && !o.failed)
         .toList();
     final legacy = ref.watch(legacyPurchasesProvider);
+    final toReorder = ref.watch(reorderGroupsProvider).fold(0, (n, g) => n + g.lines.length);
     final canCreate = hasPermission(ref, Permissions.purchasesCreate);
     final suppliers = ref.watch(supplierOptionsProvider).valueOrNull ?? const <SupplierOption>[];
     final supplierName = {for (final s in suppliers) s.id: s.name};
@@ -122,6 +125,13 @@ class _PurchasesScreenState extends ConsumerState<PurchasesScreen> {
                     ),
                     icon: const Icon(Icons.move_to_inbox_outlined, size: 18),
                     label: Text('Import ${legacy.length} saved on this computer'),
+                  ),
+                if (canCreate)
+                  OutlinedButton.icon(
+                    key: const Key('purchases-reorder'),
+                    onPressed: () => showDialog(context: context, builder: (_) => const ReorderDialog()),
+                    icon: const Icon(Icons.playlist_add_check, size: 18),
+                    label: Text(toReorder == 0 ? 'Reorder' : 'Reorder ($toReorder)'),
                   ),
                 OutlinedButton.icon(
                   onPressed: () => ref.read(purchasesProvider.notifier).refresh(),

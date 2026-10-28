@@ -12,7 +12,6 @@ import 'package:aimify_desktop/features/auth/presentation/auth_controller.dart';
 import 'package:aimify_desktop/features/inventory/data/outbox_overlay.dart';
 import 'package:aimify_desktop/features/parties/data/party_overlay.dart';
 import 'package:aimify_desktop/features/parties/domain/party.dart';
-import 'package:aimify_desktop/features/parties/presentation/party_history_dialog.dart';
 import 'package:aimify_desktop/features/sales/data/sales_repository.dart';
 import 'package:aimify_desktop/features/sales/domain/sale.dart';
 import 'package:aimify_desktop/features/sales/presentation/sale_detail_dialog.dart';
@@ -544,26 +543,6 @@ void main() {
       expect(rig.sales.voided.single, (id: 'a', reason: 'Entered twice'));
       expect(find.textContaining('Refund ₦300'), findsOneWidget);
     });
-  });
-
-  testWidgets("a customer's history lists their sales, with New sale and Statement", (tester) async {
-    await _pump(
-      tester,
-      _opener(PartyHistoryDialog(party: fixtureParty('c1', name: 'Ada Stores'))),
-      rig: _Rig(
-        sales: [
-          fixtureSale('a', reference: 'INV-0001', customerId: 'c1'),
-          fixtureSale('b', reference: 'INV-0002', customerId: 'c2'),
-        ],
-      ),
-    );
-    await _open(tester);
-    expect(find.byKey(const Key('customer-sales')), findsOneWidget);
-    expect(find.text('Sales (1)'), findsOneWidget);
-    expect(find.text('INV-0001'), findsOneWidget);
-    expect(find.text('INV-0002'), findsNothing);
-    expect(find.byKey(const Key('customer-new-sale')), findsOneWidget);
-    expect(find.byKey(const Key('supplier-statement')), findsOneWidget);
   });
 
   test('salesProvider asks the server only with sales.view', () async {

@@ -11,7 +11,6 @@ import '../../auth/presentation/permissions_provider.dart';
 import '../../parties/data/parties_repository.dart';
 import '../../parties/domain/party.dart';
 import '../../parties/presentation/credit_entry_dialog.dart';
-import '../../parties/presentation/party_history_dialog.dart';
 import 'debt_report_view.dart';
 
 /// Money owed to the business (customer balances) and money the business
@@ -51,7 +50,7 @@ class _CreditsDebtsScreenState extends ConsumerState<CreditsDebtsScreen>
     final canSeeSuppliers = hasPermission(ref, Permissions.suppliersView);
     final canRecord = hasPermission(ref, Permissions.creditRecord);
     final customers = ref.watch(activePartyListProvider(PartyType.customer));
-    final suppliers = ref.watch(partyListProvider(PartyType.supplier));
+    final suppliers = ref.watch(activePartyListProvider(PartyType.supplier));
 
     final totalReceivable = customers.fold(0.0, (sum, c) => sum + c.balanceOwed);
     final totalPayable = suppliers.fold(0.0, (sum, s) => sum + s.balanceOwed);
@@ -203,10 +202,7 @@ class _DebtsTable extends ConsumerWidget {
             rows: [
               for (final party in owing)
                 DataRow(
-                  // A customer opens their page; a supplier, their account.
-                  onSelectChanged: (_) => isCustomer
-                      ? context.go('/customers/${party.id}')
-                      : showDialog(context: context, builder: (_) => PartyHistoryDialog(party: party)),
+                  onSelectChanged: (_) => context.go(isCustomer ? '/customers/${party.id}' : '/suppliers/${party.id}'),
                   cells: [
                     DataCell(
                       ConstrainedBox(

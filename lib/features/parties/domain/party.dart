@@ -36,6 +36,10 @@ class Party {
     this.salesCount = 0,
     this.lastSaleAt,
     this.paymentTermsDays = 30,
+    this.overdue = 0,
+    this.totalPurchases = 0,
+    this.purchaseCount = 0,
+    this.lastPurchaseAt,
   });
 
   final String id;
@@ -69,6 +73,15 @@ class Party {
   /// Days after a sale (or a purchase reaching their account) it is due.
   final int paymentTermsDays;
 
+  /// The part of [balanceOwed] past its due date.
+  final double overdue;
+
+  /// Suppliers only: what was bought from them (purchases that reached
+  /// their account).
+  final double totalPurchases;
+  final int purchaseCount;
+  final DateTime? lastPurchaseAt;
+
   /// What they can still buy on credit, or null without a limit.
   double? get creditLeft => creditLimit > 0 ? creditLimit - balanceOwed : null;
 
@@ -93,6 +106,10 @@ class Party {
         salesCount: salesCount,
         lastSaleAt: lastSaleAt,
         paymentTermsDays: paymentTermsDays,
+        overdue: overdue,
+        totalPurchases: totalPurchases,
+        purchaseCount: purchaseCount,
+        lastPurchaseAt: lastPurchaseAt,
       );
 
   Party withInput(PartyInput input) => Party(
@@ -114,6 +131,10 @@ class Party {
         salesCount: salesCount,
         lastSaleAt: lastSaleAt,
         paymentTermsDays: input.paymentTermsDays,
+        overdue: overdue,
+        totalPurchases: totalPurchases,
+        purchaseCount: purchaseCount,
+        lastPurchaseAt: lastPurchaseAt,
       );
 
   factory Party.fromJson(PartyType type, Map<String, dynamic> json) => Party(
@@ -134,6 +155,10 @@ class Party {
         salesCount: (json['salesCount'] as num?)?.toInt() ?? 0,
         lastSaleAt: DateTime.tryParse(json['lastSaleAt'] as String? ?? '')?.toLocal(),
         paymentTermsDays: (json['paymentTermsDays'] as num?)?.toInt() ?? 30,
+        overdue: (json['overdue'] as num?)?.toDouble() ?? 0,
+        totalPurchases: (json['totalPurchases'] as num?)?.toDouble() ?? 0,
+        purchaseCount: (json['purchaseCount'] as num?)?.toInt() ?? 0,
+        lastPurchaseAt: DateTime.tryParse(json['lastPurchaseAt'] as String? ?? '')?.toLocal(),
       );
 }
 

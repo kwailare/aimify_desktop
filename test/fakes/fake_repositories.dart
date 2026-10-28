@@ -13,6 +13,7 @@ import 'package:aimify_desktop/features/sales/data/sales_repository.dart';
 import 'package:aimify_desktop/features/sales/domain/sale.dart';
 import 'package:aimify_desktop/features/products/data/products_repository.dart';
 import 'package:aimify_desktop/features/products/domain/product.dart';
+import 'package:aimify_desktop/features/suppliers/data/supplier_prices.dart';
 import 'package:aimify_desktop/features/warehouses/data/warehouses_repository.dart';
 import 'package:aimify_desktop/features/warehouses/domain/warehouse.dart';
 import 'package:aimify_desktop/shared/offline/local_store.dart';
@@ -327,17 +328,12 @@ class FakePartiesRepository implements PartiesRepository {
     return next;
   }
 
-  /// Like the server: customers are listed with the archived ones, suppliers
-  /// without.
+  /// Like the server (read with includeArchived): an archived party stays
+  /// listed, marked.
   @override
   Future<Party> archive(PartyType type, String id) async {
     final archived = _listFor(type).firstWhere((p) => p.id == id).copyWith(isActive: false);
-    _setList(
-      type,
-      type == PartyType.customer
-          ? [for (final p in _listFor(type)) p.id == id ? archived : p]
-          : _listFor(type).where((p) => p.id != id).toList(),
-    );
+    _setList(type, [for (final p in _listFor(type)) p.id == id ? archived : p]);
     return archived;
   }
 
@@ -491,6 +487,10 @@ class FakePurchasesRepository implements PurchasesRepository {
 
   @override
   Future<List<Purchase>> list() async => List.of(purchases);
+
+  @override
+  Future<List<Purchase>> listForSupplier(String supplierId) async =>
+      purchases.where((p) => p.supplierId == supplierId).toList();
 
   @override
   Future<Purchase> get(String id) async => _find(id);
@@ -844,6 +844,15 @@ class FakeDebtReportRepository implements DebtReportRepository {
   }
 }
 
+class FakeSupplierPricesRepository implements SupplierPricesRepository {
+  FakeSupplierPricesRepository([Map<String, List<SupplierProductPrice>>? bySupplier]) : bySupplier = bySupplier ?? {};
+
+  final Map<String, List<SupplierProductPrice>> bySupplier;
+
+  @override
+  Future<List<SupplierProductPrice>> fetch(String supplierId) async => bySupplier[supplierId] ?? const [];
+}
+
 List<Override> fakeDataOverrides({
   FakeProductsRepository? products,
   FakeWarehousesRepository? warehouses,
@@ -855,6 +864,7 @@ List<Override> fakeDataOverrides({
   FakeSalesRepository? sales,
   FakeCustomerTypesRepository? customerTypes,
   FakeDebtReportRepository? debts,
+  FakeSupplierPricesRepository? supplierPrices,
   LocalStore? store,
 }) =>
     [
@@ -874,4 +884,5 @@ List<Override> fakeDataOverrides({
       salesRepositoryProvider.overrideWithValue(sales ?? FakeSalesRepository()),
       customerTypesRepositoryProvider.overrideWithValue(customerTypes ?? FakeCustomerTypesRepository()),
       debtReportRepositoryProvider.overrideWithValue(debts ?? FakeDebtReportRepository()),
+      supplierPricesRepositoryProvider.overrideWithValue(supplierPrices ?? FakeSupplierPricesRepository()),
     ];
