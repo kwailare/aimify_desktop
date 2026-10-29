@@ -58,6 +58,15 @@ class ApiConstants {
   static String customerType(String id) => '$_v1/customer-types/$id';
   static const String debtReport = '$_v1/reports/debts';
   static String supplierPrices(String id) => '$_v1/suppliers/$id/prices';
+  static const String expenses = '$_v1/expenses';
+  static String expense(String id) => '$_v1/expenses/$id';
+  static String expenseVoid(String id) => '$_v1/expenses/$id/void';
+  static String expenseAttachment(String id) => '$_v1/expenses/$id/attachment';
+  static const String expenseCategories = '$_v1/expense-categories';
+  static String expenseCategory(String id) => '$_v1/expense-categories/$id';
+  static const String recurringExpenses = '$_v1/recurring-expenses';
+  static String recurringExpense(String id) => '$_v1/recurring-expenses/$id';
+  static String recordRecurringExpense(String id) => '$_v1/recurring-expenses/$id/record';
   static String sale(String id) => '$_v1/sales/$id';
   static String salePayments(String id) => '$_v1/sales/$id/payments';
   static String saleVoid(String id) => '$_v1/sales/$id/void';

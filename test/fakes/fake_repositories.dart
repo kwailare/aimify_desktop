@@ -1,5 +1,7 @@
 import 'package:aimify_desktop/features/credits_debts/data/debt_report.dart';
 import 'package:aimify_desktop/features/customers/data/customer_types.dart';
+import 'package:aimify_desktop/features/expenses/data/expenses_repository.dart';
+import 'package:aimify_desktop/features/expenses/domain/expense.dart';
 import 'package:aimify_desktop/features/inventory/data/inventory_repository.dart';
 import 'package:aimify_desktop/features/inventory/domain/stock_movement.dart';
 import 'package:aimify_desktop/features/parties/data/parties_repository.dart';
@@ -853,6 +855,261 @@ class FakeSupplierPricesRepository implements SupplierPricesRepository {
   Future<List<SupplierProductPrice>> fetch(String supplierId) async => bySupplier[supplierId] ?? const [];
 }
 
+/// An expense as the server would return it.
+Expense fixtureExpense(
+  String id, {
+  String reference = 'EXP-0001',
+  String categoryId = 'cat-fuel',
+  String categoryName = 'Fuel & generator',
+  double amount = 45000,
+  DateTime? date,
+  bool voided = false,
+  String? description = 'Diesel',
+  String? warehouseId,
+  String? warehouseName,
+  String? attachmentUrl,
+  String? attachmentType,
+  String? createdById = 'u1',
+}) =>
+    Expense(
+      id: id,
+      reference: reference,
+      categoryId: categoryId,
+      categoryName: categoryName,
+      description: description,
+      amount: amount,
+      expenseDate: date ?? DateTime.now(),
+      warehouseId: warehouseId,
+      warehouseName: warehouseName,
+      attachmentUrl: attachmentUrl,
+      attachmentName: attachmentUrl == null ? null : 'receipt',
+      attachmentType: attachmentType,
+      status: voided ? ExpenseStatus.voided : ExpenseStatus.recorded,
+      voidReason: voided ? 'Recorded twice' : null,
+      createdById: createdById,
+      createdByName: 'Ada',
+      createdAt: date ?? DateTime.now(),
+    );
+
+class FakeExpensesRepository implements ExpensesRepository {
+  FakeExpensesRepository({List<Expense>? expenses, List<ExpenseCategory>? categories, List<RecurringExpense>? recurring})
+      : expenses = expenses ?? [],
+        cats = categories ??
+            [
+              const ExpenseCategory(id: 'cat-rent', name: 'Rent', monthlyBudget: 300000),
+              const ExpenseCategory(id: 'cat-fuel', name: 'Fuel & generator', monthlyBudget: 50000),
+              const ExpenseCategory(id: 'cat-other', name: 'Other'),
+            ],
+        recurringList = recurring ?? [];
+
+  List<Expense> expenses;
+  List<ExpenseCategory> cats;
+  List<RecurringExpense> recurringList;
+  final List<({ExpenseInput input, String? clientRef})> created = [];
+  final List<({String id, ExpenseInput input})> updated = [];
+  final List<({String id, String reason})> voided = [];
+  final List<({String id, String filename, int size})> attached = [];
+  final List<({String id, DateTime dueDate, double? amount})> recorded = [];
+  final List<({String? id, Map<String, dynamic> fields})> savedRecurring = [];
+
+  /// Thrown by the next write when set.
+  Object? writeError;
+
+  void _maybeFail() {
+    final error = writeError;
+    if (error != null) throw error;
+  }
+
+  Expense _find(String id) => expenses.firstWhere((e) => e.id == id);
+
+  Expense _with(Expense e, {ExpenseInput? input, bool? voided, String? reason, String? url, String? type}) {
+    final i = input;
+    final category = i == null ? null : cats.where((c) => c.id == i.categoryId).firstOrNull;
+    return Expense(
+      id: e.id,
+      reference: e.reference,
+      categoryId: i?.categoryId ?? e.categoryId,
+      categoryName: category?.name ?? e.categoryName,
+      description: i == null ? e.description : i.description,
+      amount: i?.amount ?? e.amount,
+      expenseDate: i?.expenseDate ?? e.expenseDate,
+      paymentMethod: i?.paymentMethod ?? e.paymentMethod,
+      warehouseId: i == null ? e.warehouseId : i.warehouseId,
+      warehouseName: e.warehouseName,
+      payee: i == null ? e.payee : i.payee,
+      receiptNumber: i == null ? e.receiptNumber : i.receiptNumber,
+      attachmentUrl: url ?? e.attachmentUrl,
+      attachmentName: url == null ? e.attachmentName : 'receipt',
+      attachmentType: type ?? e.attachmentType,
+      status: voided == true ? ExpenseStatus.voided : e.status,
+      voidReason: reason ?? e.voidReason,
+      createdById: e.createdById,
+      createdByName: e.createdByName,
+      createdAt: e.createdAt,
+      updatedByName: i == null ? e.updatedByName : 'Ada',
+      updatedAt: i == null ? e.updatedAt : DateTime(2026, 10, 29),
+    );
+  }
+
+  void _replace(Expense next) => expenses = [for (final e in expenses) e.id == next.id ? next : e];
+
+  @override
+  Future<List<Expense>> list() async => List.of(expenses);
+
+  @override
+  Future<Expense> get(String id) async => _find(id);
+
+  @override
+  Future<Expense> create(ExpenseInput input, {String? clientRef}) async {
+    _maybeFail();
+    created.add((input: input, clientRef: clientRef));
+    final n = created.length;
+    final e = _with(
+      fixtureExpense('srv$n', reference: 'EXP-${n.toString().padLeft(4, '0')}', description: null),
+      input: input,
+    );
+    expenses = [e, ...expenses];
+    return e;
+  }
+
+  @override
+  Future<Expense> update(String id, ExpenseInput input) async {
+    _maybeFail();
+    updated.add((id: id, input: input));
+    final e = _with(_find(id), input: input);
+    _replace(e);
+    return e;
+  }
+
+  @override
+  Future<Expense> voidExpense(String id, {required String reason}) async {
+    _maybeFail();
+    voided.add((id: id, reason: reason));
+    final e = _with(_find(id), voided: true, reason: reason);
+    _replace(e);
+    return e;
+  }
+
+  @override
+  Future<Expense> attach(String id, {required List<int> bytes, required String filename}) async {
+    _maybeFail();
+    attached.add((id: id, filename: filename, size: bytes.length));
+    final pdf = filename.toLowerCase().endsWith('.pdf');
+    final e = _with(_find(id), url: 'https://example.test/$filename', type: pdf ? 'application/pdf' : 'image/png');
+    _replace(e);
+    return e;
+  }
+
+  @override
+  Future<Expense> removeAttachment(String id) async {
+    final e = _find(id);
+    final next = Expense(
+      id: e.id,
+      reference: e.reference,
+      categoryId: e.categoryId,
+      categoryName: e.categoryName,
+      amount: e.amount,
+      expenseDate: e.expenseDate,
+      createdById: e.createdById,
+    );
+    _replace(next);
+    return next;
+  }
+
+  @override
+  Future<List<ExpenseCategory>> categories() async => List.of(cats);
+
+  @override
+  Future<ExpenseCategory> createCategory(String name, {double monthlyBudget = 0}) async {
+    _maybeFail();
+    final c = ExpenseCategory(id: 'cat${cats.length + 1}', name: name, monthlyBudget: monthlyBudget);
+    cats = [...cats, c];
+    return c;
+  }
+
+  @override
+  Future<ExpenseCategory> updateCategory(String id, {String? name, double? monthlyBudget}) async {
+    _maybeFail();
+    final old = cats.firstWhere((c) => c.id == id);
+    final c = ExpenseCategory(id: id, name: name ?? old.name, monthlyBudget: monthlyBudget ?? old.monthlyBudget, expenseCount: old.expenseCount);
+    cats = [for (final x in cats) x.id == id ? c : x];
+    return c;
+  }
+
+  @override
+  Future<void> deleteCategory(String id) async {
+    _maybeFail();
+    cats = cats.where((c) => c.id != id).toList();
+  }
+
+  @override
+  Future<List<RecurringExpense>> recurring() async => List.of(recurringList);
+
+  @override
+  Future<RecurringExpense> saveRecurring(String? id, Map<String, dynamic> fields) async {
+    _maybeFail();
+    savedRecurring.add((id: id, fields: fields));
+    if (id != null) {
+      final old = recurringList.firstWhere((r) => r.id == id);
+      final next = RecurringExpense(
+        id: id,
+        categoryId: old.categoryId,
+        categoryName: old.categoryName,
+        description: old.description,
+        amount: old.amount,
+        frequency: old.frequency,
+        nextDueDate: old.nextDueDate,
+        active: fields['active'] as bool? ?? old.active,
+        due: (fields['active'] as bool? ?? old.active) && old.due,
+      );
+      recurringList = [for (final r in recurringList) r.id == id ? next : r];
+      return next;
+    }
+    final r = RecurringExpense(
+      id: 'rec${recurringList.length + 1}',
+      categoryId: fields['categoryId'] as String,
+      categoryName: cats.firstWhere((c) => c.id == fields['categoryId']).name,
+      description: fields['description'] as String,
+      amount: (fields['amount'] as num).toDouble(),
+      frequency: FrequencyX.fromApi(fields['frequency'] as String?),
+      nextDueDate: DateTime.parse(fields['nextDueDate'] as String),
+    );
+    recurringList = [...recurringList, r];
+    return r;
+  }
+
+  @override
+  Future<void> deleteRecurring(String id) async => recurringList = recurringList.where((r) => r.id != id).toList();
+
+  @override
+  Future<Expense> recordRecurring(String id, {required DateTime dueDate, double? amount}) async {
+    _maybeFail();
+    recorded.add((id: id, dueDate: dueDate, amount: amount));
+    final r = recurringList.firstWhere((x) => x.id == id);
+    final e = await create(ExpenseInput(
+      categoryId: r.categoryId,
+      amount: amount ?? r.amount,
+      expenseDate: DateTime.now(),
+      description: r.description,
+    ));
+    recurringList = [
+      for (final x in recurringList)
+        x.id == id
+            ? RecurringExpense(
+                id: x.id,
+                categoryId: x.categoryId,
+                categoryName: x.categoryName,
+                description: x.description,
+                amount: x.amount,
+                frequency: x.frequency,
+                nextDueDate: DateTime.utc(x.nextDueDate.year, x.nextDueDate.month + 1, x.nextDueDate.day),
+              )
+            : x,
+    ];
+    return e;
+  }
+}
+
 List<Override> fakeDataOverrides({
   FakeProductsRepository? products,
   FakeWarehousesRepository? warehouses,
@@ -865,6 +1122,7 @@ List<Override> fakeDataOverrides({
   FakeCustomerTypesRepository? customerTypes,
   FakeDebtReportRepository? debts,
   FakeSupplierPricesRepository? supplierPrices,
+  FakeExpensesRepository? expenses,
   LocalStore? store,
 }) =>
     [
@@ -885,4 +1143,5 @@ List<Override> fakeDataOverrides({
       customerTypesRepositoryProvider.overrideWithValue(customerTypes ?? FakeCustomerTypesRepository()),
       debtReportRepositoryProvider.overrideWithValue(debts ?? FakeDebtReportRepository()),
       supplierPricesRepositoryProvider.overrideWithValue(supplierPrices ?? FakeSupplierPricesRepository()),
+      expensesRepositoryProvider.overrideWithValue(expenses ?? FakeExpensesRepository()),
     ];

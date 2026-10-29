@@ -110,6 +110,11 @@ up whenever it re-reads `/me` (after any `402`/`403`, and on refresh).
 | | `sales.discount` | Sell at a price other than the product's, or give a discount | Owner, Administrator |
 | | `sales.override` | Complete a credit sale over the customer's credit limit | Owner, Administrator |
 | | `sales.void` | Void a sale (stock goes back) | Owner, Administrator |
+| Expenses | `expenses.view` | List and read expenses | Owner, Administrator, Accountant / Finance, Warehouse Manager |
+| | `expenses.create` | Record an expense (and attach its receipt), record a recurring one that is due | Owner, Administrator, Accountant / Finance, Warehouse Manager |
+| | `expenses.edit` | Change an expense or its receipt | Owner, Administrator, Accountant / Finance |
+| | `expenses.void` | Void an expense | Owner, Administrator, Accountant / Finance |
+| | `expenses.manage` | Categories, monthly budgets and recurring expenses | Owner, Administrator |
 | Fixed | `team.manage` | List the team and invite people | Owner, Administrator (not editable) |
 | | `setup.complete` | Mark the guided setup as finished | Owner, Administrator (not editable) |
 
@@ -905,6 +910,106 @@ Money already paid on it first settles the customer's other debts
 (`creditedToAccount`); only what is left is owed back to them (`refundOwed`;
 all of it for a walk-in). `409 sale_not_voidable` if already voided.
 
+## Expenses
+
+Money the business spends, numbered per organization (`EXP-0001`). A
+mistake is voided with a reason, never deleted; changes keep who made them
+and when, and the audit log has what changed.
+
+### The expense object
+
+```json
+{
+  "id": "uuid", "number": 1, "reference": "EXP-0001",
+  "categoryId": "uuid", "categoryName": "Fuel & generator",
+  "description": "Diesel for the generator", "amount": 45000,
+  "expenseDate": "2026-10-05T10:00:00.000Z", "paymentMethod": "cash",
+  "warehouseId": "uuid", "warehouseName": "Lagos",
+  "payee": "Total filling station", "receiptNumber": "TF-881",
+  "attachmentUrl": "https://...blob.vercel-storage.com/...", "attachmentName": "receipt.pdf", "attachmentType": "application/pdf",
+  "status": "recorded", "voidReason": null, "voidedAt": null, "voidedByName": null,
+  "recurringId": null,
+  "createdBy": "uuid", "createdByName": "Musa", "createdAt": "...", "updatedByName": null, "updatedAt": "..."
+}
+```
+
+`paymentMethod` is one of `cash`, `transfer`, `pos`, `card`, `cheque`, `other`.
+`warehouseId`, `payee`, `receiptNumber` (the supplier's receipt number) and
+`description` are optional. `status` is `recorded` or `voided`.
+
+### `GET /api/v1/expenses`
+
+Needs `expenses.view`. Newest first. Filters: `from` (inclusive) and `to`
+(exclusive) dates, `categoryId`, `warehouseId`, `status`, `limit` (default
+500, max 2000). `{ "expenses": [...] }`.
+
+### `POST /api/v1/expenses`
+
+Needs `expenses.create`. `categoryId` and `amount` (above 0) are required;
+`expenseDate` defaults to now. A `clientRef` makes a retry return the first
+(`"duplicate": true`) instead of recording twice. `201 { "expense": ... }`;
+`400` for an unknown category or warehouse.
+
+### `GET` / `PATCH /api/v1/expenses/{id}`
+
+`PATCH` needs `expenses.edit` and changes any of the fields above; `409
+expense_voided` once voided.
+
+### `POST /api/v1/expenses/{id}/void`
+
+Needs `expenses.void`. `{ "reason": "Paid twice" }` (required). `409` if
+already voided.
+
+### `POST` / `DELETE /api/v1/expenses/{id}/attachment`
+
+The receipt: a photo (PNG, JPEG, WebP) or a PDF, 5 MB at most, as
+multipart/form-data in a field named `file`. Replaces any earlier one (the
+old file is deleted). Needs `expenses.edit`, or `expenses.create` for the
+person who recorded it. `503 storage_unavailable` if uploads aren't set up.
+
+### Expense categories
+
+Each organization keeps its own list; new organizations (and every one that
+existed when expenses moved to the server) start with Rent, Salaries &
+wages, Transport & logistics, Utilities, Fuel & generator, Repairs &
+maintenance, Marketing, Bank charges, Taxes & levies and Other.
+
+- `GET /api/v1/expense-categories` (`expenses.view` or `expenses.create`):
+  `{ "categories": [{ "id", "name", "monthlyBudget", "expenseCount" }] }`.
+  `monthlyBudget` is `0` for no budget.
+- `POST` (`expenses.manage`) `{ "name", "monthlyBudget" }`; a name already used
+  (any case) is `409`.
+- `PATCH /api/v1/expense-categories/{id}` (`expenses.manage`): `name` and/or
+  `monthlyBudget`.
+- `DELETE` (`expenses.manage`): `409 category_in_use` while any expense or
+  recurring expense uses it.
+
+### Recurring expenses
+
+```json
+{
+  "id": "uuid", "categoryId": "uuid", "categoryName": "Rent", "description": "Shop rent",
+  "amount": 300000, "paymentMethod": "transfer", "warehouseId": null, "warehouseName": null,
+  "payee": "Landlord", "frequency": "monthly", "nextDueDate": "2026-11-01T00:00:00.000Z",
+  "active": true, "due": false
+}
+```
+
+- `GET /api/v1/recurring-expenses` (`expenses.create`): soonest due first.
+  `due` is true when `nextDueDate` is today or earlier and it isn't paused.
+- `POST` (`expenses.manage`): `categoryId`, `amount`, `description`,
+  `frequency` (`weekly`, `monthly`, `yearly`) and `nextDueDate` are required.
+- `PATCH /api/v1/recurring-expenses/{id}` (`expenses.manage`): any field, and
+  `active` to pause or resume. `DELETE` stops it; expenses already recorded
+  from it stay.
+- `POST /api/v1/recurring-expenses/{id}/record` (`expenses.create`): records
+  the occurrence due now as an expense and moves `nextDueDate` on (monthly
+  keeps the day of the month where it can: 31 January, then 28 February).
+  Optional `amount` and `expenseDate`. Send the `dueDate` that was shown: if
+  that occurrence was already recorded the answer is `409 already_recorded`
+  (so a double click records once). `409 recurring_paused` when paused.
+  `201 { "expense", "recurring" }`.
+
 ## Reports
 
 ### `GET /api/v1/reports/valuation`
@@ -1314,7 +1419,6 @@ website's Team page.
 
 ## What this API does *not* do yet
 
-- **No expenses yet.** They are still saved on the desktop only.
 - **No returns yet** (Phase 2). A sale recorded by mistake can be voided.
 - **No stock transfers between warehouses yet.** Moving stock means a stock
   out in one warehouse and a stock in to the other.

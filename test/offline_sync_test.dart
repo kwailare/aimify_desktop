@@ -11,6 +11,7 @@ import 'package:aimify_desktop/features/auth/domain/auth_models.dart';
 import 'package:aimify_desktop/features/auth/presentation/auth_controller.dart';
 import 'package:aimify_desktop/features/expenses/data/expenses_repository.dart';
 import 'package:aimify_desktop/features/expenses/domain/expense.dart';
+import 'package:aimify_desktop/features/sales/domain/sale.dart';
 import 'package:aimify_desktop/features/inventory/data/inventory_repository.dart';
 import 'package:aimify_desktop/features/inventory/domain/stock_movement.dart';
 import 'package:aimify_desktop/features/products/data/products_repository.dart';
@@ -459,34 +460,28 @@ void main() {
       expect(rig.ops, isEmpty);
     });
 
-    test('local-only modules (purchases, expenses) are saved and restored', () async {
+    test('expenses saved on this computer by older versions are read back, for upload', () async {
       final store = MemoryLocalStore();
-      final first = _Rig(store: store);
-      await first.ready();
-      first.container.read(expensesProvider);
-      await Future<void>.delayed(Duration.zero);
-      first.container.read(expensesProvider.notifier).addExpense(
-            Expense(
-              id: 'e1',
-              category: 'Transport',
-              amount: 18000,
-              date: DateTime(2026, 9, 20),
-              paymentMethod: PaymentMethod.cash,
-              note: 'Van fuel',
-            ),
-          );
-      await first.container.read(expensesProvider.notifier).flushWrites();
-      first.dispose();
-
-      final second = _Rig(store: store);
-      addTearDown(second.dispose);
-      await second.ready();
-      second.container.read(expensesProvider);
+      await writeJson(store, 'u_u1_expenses', [
+        LegacyExpense(
+          id: 'e1',
+          category: 'Transport',
+          amount: 18000,
+          date: DateTime(2026, 9, 20),
+          paymentMethod: 'mobileMoney',
+          note: 'Van fuel',
+        ).toJson(),
+      ]);
+      final rig = _Rig(store: store);
+      addTearDown(rig.dispose);
+      await rig.ready();
+      rig.container.read(legacyExpensesProvider);
       await Future<void>.delayed(const Duration(milliseconds: 50));
 
-      final expenses = second.container.read(expensesProvider);
-      expect(expenses.single.note, 'Van fuel');
-      expect(expenses.single.amount, 18000);
+      final legacy = rig.container.read(legacyExpensesProvider);
+      expect(legacy.single.note, 'Van fuel');
+      expect(legacy.single.amount, 18000);
+      expect(legacy.single.method.apiValue, 'transfer', reason: 'mobile money goes up as a transfer');
     });
   });
 

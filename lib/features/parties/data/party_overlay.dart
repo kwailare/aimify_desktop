@@ -68,6 +68,7 @@ List<Party> overlayParties(List<Party> base, List<OutboxOp> ops, PartyType type)
       case OpKind.productCreate:
       case OpKind.productUpdate:
       case OpKind.productArchive:
+      case OpKind.expenseCreate:
         break;
     }
   }

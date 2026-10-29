@@ -18,6 +18,8 @@ import '../products/domain/product.dart';
 import '../purchases/data/purchases_repository.dart';
 import '../purchases/domain/purchase.dart';
 import '../reports/data/valuation_report.dart';
+import '../expenses/data/expenses_repository.dart';
+import '../expenses/domain/expense.dart';
 import '../sales/data/sales_repository.dart';
 import '../sales/domain/sale.dart';
 import '../warehouses/data/warehouses_repository.dart';
@@ -194,6 +196,7 @@ class SyncEngine extends Notifier<SyncState> {
           ref.read(partiesProvider(PartyType.supplier).notifier).refresh(),
           ref.read(purchasesProvider.notifier).refresh(),
           ref.read(salesProvider.notifier).refresh(),
+          ref.read(expensesProvider.notifier).refresh(),
           ref.read(warehousesProvider.notifier).refresh(),
           ref.read(authControllerProvider.notifier).refresh(),
         ]);
@@ -297,6 +300,14 @@ class SyncEngine extends Notifier<SyncState> {
         // The op id is the clientRef: a purchase that already landed is
         // returned instead of recorded twice, so no check is needed.
         await ref.read(purchasesRepositoryProvider).create(input, clientRef: op.id);
+
+      case OpKind.expenseCreate:
+        // The op id is the clientRef: an expense that already landed is
+        // returned instead of recorded twice.
+        await ref.read(expensesRepositoryProvider).create(
+              ExpenseInput.fromJson(Map<String, dynamic>.from(op.payload['input'] as Map)),
+              clientRef: op.id,
+            );
 
       case OpKind.saleCreate:
         final input = SaleInput.fromJson(Map<String, dynamic>.from(op.payload['input'] as Map))

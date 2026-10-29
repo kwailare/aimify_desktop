@@ -89,6 +89,21 @@ class Permissions {
   /// Void a sale (stock goes back).
   static const salesVoid = 'sales.void';
 
+  /// See expenses (Owner, Administrator, Accountant, Warehouse Manager).
+  static const expensesView = 'expenses.view';
+
+  /// Record an expense, attach its receipt, record a recurring one when due.
+  static const expensesCreate = 'expenses.create';
+
+  /// Change an expense or its receipt.
+  static const expensesEdit = 'expenses.edit';
+
+  /// Void an expense.
+  static const expensesVoid = 'expenses.void';
+
+  /// Categories, monthly budgets and recurring expenses.
+  static const expensesManage = 'expenses.manage';
+
   /// List the team and invite people (Owner, Administrator; not editable).
   static const teamManage = 'team.manage';
 

@@ -8,6 +8,7 @@ import '../parties/data/parties_repository.dart';
 import '../parties/domain/party.dart';
 import '../products/data/products_repository.dart';
 import '../purchases/domain/purchase.dart';
+import '../expenses/domain/expense.dart';
 import '../sales/domain/sale.dart';
 import 'sync_engine.dart';
 
@@ -95,6 +96,9 @@ String describeOp(OutboxOp op, Map<String, String> productNames) {
       final amount = (op.payload['amount'] as num).toDouble();
       return '${kind.label} ${currencyFormat.format(signedCreditAmount(kind, amount).abs())} · '
           '${product(op.payload['partyId'] as String?)}';
+    case OpKind.expenseCreate:
+      final input = ExpenseInput.fromJson(Map<String, dynamic>.from(op.payload['input'] as Map));
+      return 'Expense · ${currencyFormat.format(input.amount)}${input.description == null ? '' : ' · ${input.description}'}';
     case OpKind.saleCreate:
       final input = SaleInput.fromJson(Map<String, dynamic>.from(op.payload['input'] as Map));
       return 'Sale · ${input.lines.length} line${input.lines.length == 1 ? '' : 's'} · ${currencyFormat.format(input.total)}';

@@ -66,11 +66,11 @@ void main() {
       }
     });
 
-    test('Warehouse Manager by default: stock and supplier side, not customers or expenses', () {
+    test('Warehouse Manager by default: stock and supplier side and expenses, not customers', () {
       final visible = _visible('Warehouse Manager');
       expect(visible, containsAll([AppScreen.products, AppScreen.inventory, AppScreen.warehouses,
-          AppScreen.purchases, AppScreen.suppliers, AppScreen.creditsDebts, AppScreen.reports]));
-      expect(visible, isNot(anyOf(contains(AppScreen.customers), contains(AppScreen.expenses))));
+          AppScreen.purchases, AppScreen.suppliers, AppScreen.creditsDebts, AppScreen.reports, AppScreen.expenses]));
+      expect(visible, isNot(contains(AppScreen.customers)));
     });
 
     test('Inventory Staff by default: the stock side, warehouses read-only', () {
@@ -116,9 +116,16 @@ void main() {
       expect(isScreenVisible('Sales Staff', ['products.view'], AppScreen.creditsDebts), isFalse);
     });
 
-    test('local-only screens (Expenses, Reports) keep their role rules regardless of the grid', () {
-      expect(isScreenVisible('Sales Staff', defaultPermissionsFor('Owner'), AppScreen.expenses), isFalse);
-      expect(isScreenVisible('Accountant / Finance', const [], AppScreen.expenses), isTrue);
+    test('Reports keeps its role rule regardless of the grid', () {
+      expect(isScreenVisible('Sales Staff', defaultPermissionsFor('Owner'), AppScreen.reports), isFalse);
+      expect(isScreenVisible('Accountant / Finance', const [], AppScreen.reports), isTrue);
+    });
+
+    test('Expenses follows expenses.view', () {
+      expect(isScreenVisible('Sales Staff', const ['expenses.view'], AppScreen.expenses), isTrue);
+      expect(isScreenVisible('Accountant / Finance', const [], AppScreen.expenses), isFalse);
+      expect(_visible('Warehouse Manager', defaultPermissionsFor('Warehouse Manager')), contains(AppScreen.expenses));
+      expect(_visible('Sales Staff', defaultPermissionsFor('Sales Staff')), isNot(contains(AppScreen.expenses)));
     });
 
     test('Purchases follows purchases.view, like the other server-backed screens', () {

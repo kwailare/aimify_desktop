@@ -53,6 +53,7 @@ OutboxView overlayOutbox(List<Product> base, List<OutboxOp> ops) {
       case OpKind.partyUpdate:
       case OpKind.partyArchive:
       case OpKind.creditEntry:
+      case OpKind.expenseCreate:
         break;
       case OpKind.saleCreate:
         // Sold while offline: the stock leaves the warehouse on screen at once.
