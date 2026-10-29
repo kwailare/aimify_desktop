@@ -122,17 +122,28 @@ class _ExpensesScreenState extends ConsumerState<ExpensesScreen> {
             ),
             if (due.isNotEmpty) ...[
               const SizedBox(height: 14),
-              Card(
+              // Tinted from the theme's warning colour, so it reads in light and dark.
+              Container(
                 key: const Key('expenses-due'),
-                color: const Color(0xFFFFF4DE),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.secondary.withValues(alpha: 0.12),
+                  border: Border.all(color: theme.colorScheme.secondary.withValues(alpha: 0.5)),
+                  borderRadius: BorderRadius.circular(12),
+                ),
                 child: Padding(
                   padding: const EdgeInsets.all(14),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        '${due.length} recurring expense${due.length == 1 ? ' is' : 's are'} due',
-                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      Row(
+                        children: [
+                          Icon(Icons.event_repeat, size: 18, color: theme.colorScheme.secondary),
+                          const SizedBox(width: 8),
+                          Text(
+                            '${due.length} recurring expense${due.length == 1 ? ' is' : 's are'} due',
+                            style: TextStyle(fontWeight: FontWeight.w800, color: theme.colorScheme.onSurface),
+                          ),
+                        ],
                       ),
                       for (final r in due)
                         Row(
@@ -140,6 +151,7 @@ class _ExpensesScreenState extends ConsumerState<ExpensesScreen> {
                             Expanded(
                               child: Text(
                                 '${r.description} · ${currencyFormat.format(r.amount)} · due ${dateFormat.format(r.nextDueDate.toLocal())}',
+                                style: TextStyle(color: theme.colorScheme.onSurface),
                               ),
                             ),
                             TextButton(

@@ -96,7 +96,7 @@ class _Rig {
   PickedReceipt? receipt = (name: 'receipt.png', bytes: [1, 2, 3]);
 }
 
-Future<_Rig> _pump(WidgetTester tester, Widget home, {_Rig? rig, Size size = const Size(1500, 1100)}) async {
+Future<_Rig> _pump(WidgetTester tester, Widget home, {_Rig? rig, Size size = const Size(1500, 1100), ThemeData? theme}) async {
   final r = rig ?? _Rig();
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1.0;
@@ -111,7 +111,7 @@ Future<_Rig> _pump(WidgetTester tester, Widget home, {_Rig? rig, Size size = con
         openUrlProvider.overrideWithValue((url) async => r.openedUrls.add(url)),
         ...fakeDataOverrides(expenses: r.repo, store: r.store),
       ],
-      child: MaterialApp(theme: ThemeData(), home: Scaffold(body: home)),
+      child: MaterialApp(theme: theme ?? ThemeData(), home: Scaffold(body: home)),
     ),
   );
   await _settle(tester);
@@ -272,6 +272,24 @@ void main() {
       expect(rig.repo.recorded.single.dueDate, due);
       expect(rig.repo.recorded.single.amount, 310000);
       expect(find.textContaining('Shop rent ₦310,000'), findsOneWidget);
+    });
+
+    testWidgets('the due banner reads in the dark theme: theme colours, not a fixed light background', (tester) async {
+      final dark = ThemeData(colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFFC9800C), brightness: Brightness.dark));
+      await _pump(
+        tester,
+        const ExpensesScreen(),
+        theme: dark,
+        rig: _Rig(recurring: [
+          RecurringExpense(id: 'rec1', categoryId: 'cat-rent', categoryName: 'Rent', description: 'Shop rent', amount: 300000, frequency: Frequency.monthly, nextDueDate: DateTime.utc(_now.year, _now.month, 1), due: true),
+        ]),
+      );
+      final banner = tester.widget<Container>(find.byKey(const Key('expenses-due')));
+      final background = (banner.decoration! as BoxDecoration).color!;
+      final onScreen = Color.alphaBlend(background, dark.colorScheme.surface);
+      expect(onScreen.computeLuminance(), lessThan(0.3), reason: 'a dark-theme banner is dark');
+      final title = tester.widget<Text>(find.text('1 recurring expense is due'));
+      expect(title.style!.color, dark.colorScheme.onSurface);
     });
 
     testWidgets('old local expenses are offered for upload, with legacy clientRefs', (tester) async {
