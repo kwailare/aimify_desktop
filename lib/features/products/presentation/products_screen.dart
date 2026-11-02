@@ -150,12 +150,12 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                   icon: const Icon(Icons.category_outlined, size: 18),
                   label: const Text('Categories & units'),
                 ),
-                if (atProductCap && isOwner) const ManageBillingLink(),
+                if (atProductCap && isOwner) const ManageBillingLink(label: 'Upgrade plan'),
                 Tooltip(
                   message: !canCreate
                       ? "Your role can't add products"
                       : atProductCap
-                          ? 'Your plan has reached its product limit — archive one to free a slot'
+                          ? 'Your plan has reached its product limit — archive one, or the Owner can upgrade the plan'
                           : '',
                   child: OutlinedButton.icon(
                     onPressed: (!canCreate || atProductCap)
@@ -175,7 +175,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                   message: !canCreate
                       ? "Your role can't add products"
                       : atProductCap
-                          ? 'Your plan has reached its product limit — archive one to free a slot'
+                          ? 'Your plan has reached its product limit — archive one, or the Owner can upgrade the plan'
                           : '',
                   child: ElevatedButton.icon(
                     onPressed: (!canCreate || atProductCap)

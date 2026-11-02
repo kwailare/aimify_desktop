@@ -140,8 +140,9 @@ The rules live in `lib/permissions.ts` in `aimify-web`.
 
 ## Plan limits
 
-Each organization is on a plan (set by the Aimify team in the admin panel)
-that can cap team members, active warehouses and active products. A cap left
+Each organization is on a plan (the Aimify team sets up the plans and their
+prices in the admin panel; the Owner chooses one on the website's billing
+page) that can cap team members, active warehouses and active products. A cap left
 empty means unlimited. When a write would go over a cap, the API returns `403`:
 
 ```json
@@ -161,14 +162,34 @@ show usage before hitting a limit:
 
 ```json
 "plan": {
-  "name": "Full Access",
+  "name": "Business",
+  "priceMonthly": 25000,
+  "scheduled": { "name": "Starter", "priceMonthly": 10000, "at": "2026-11-20T23:44:27.334Z" },
   "limits": { "users": null, "warehouses": 1, "products": null },
   "usage": { "users": 2, "warehouses": 1, "products": 34 }
 }
 ```
 
 `null` in `limits` means unlimited. The role check (`forbidden_role`) runs
-before the limit check.
+before the limit check. `scheduled` (or `null`) is a cheaper plan the Owner
+chose, starting `at` the end of the period already paid for.
+
+### Changing plan
+
+Done by the Owner on the website (`/dashboard/billing`); there is no API for
+it. The rules:
+
+- **Not paying for a period right now** (trial, lapsed, overdue, cancelled):
+  the new plan starts at once; its price applies to the next payment.
+- **Paying, to a dearer plan**: it starts at once and the difference for the
+  days left in the period is charged (the saved card, or Paystack's page).
+  The renewal date doesn't move; renewals are then at the new price. A
+  difference under ₦100 isn't charged.
+- **Paying, to a cheaper plan**: it starts when the paid period ends
+  (`plan.scheduled`); no refunds. Choosing the current plan again cancels
+  it. Paying ahead in the meantime is charged at the cheaper price.
+- **Over the new plan's limits**: nothing is deleted or locked; adding more
+  is refused (`plan_limit`) until usage is under the limit.
 
 ## Payments and subscription status
 
@@ -1602,8 +1623,8 @@ website's Team page.
 - **No returns yet** (Phase 2). A sale recorded by mistake can be voided.
 - **No stock transfers between warehouses yet.** Moving stock means a stock
   out in one warehouse and a stock in to the other.
-- **Plan limits are configured by the Aimify team.** The default plan allows
-  one active warehouse and is otherwise unlimited; see "Plan limits" above.
+- **Plans are configured by the Aimify team** and chosen by the Owner on the
+  website; see "Plan limits" above.
 
 ## Where this lives, if it needs to change
 

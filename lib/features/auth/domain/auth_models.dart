@@ -174,17 +174,39 @@ class PlanUsage {
       );
 }
 
+/// A cheaper plan the Owner chose, starting [at] the end of the period
+/// already paid for.
+class ScheduledPlan {
+  const ScheduledPlan({required this.name, required this.priceMonthly, required this.at});
+
+  final String name;
+  final double priceMonthly;
+  final DateTime at;
+
+  factory ScheduledPlan.fromJson(Map<String, dynamic> json) => ScheduledPlan(
+        name: json['name'] as String,
+        priceMonthly: (json['priceMonthly'] as num?)?.toDouble() ?? 0,
+        at: DateTime.parse(json['at'] as String).toLocal(),
+      );
+}
+
 class Plan {
-  const Plan({required this.name, required this.limits, required this.usage});
+  const Plan({required this.name, required this.limits, required this.usage, this.priceMonthly, this.scheduled});
 
   final String name;
   final PlanLimits limits;
   final PlanUsage usage;
 
+  /// Null from a server older than plan changes.
+  final double? priceMonthly;
+  final ScheduledPlan? scheduled;
+
   factory Plan.fromJson(Map<String, dynamic> json) => Plan(
         name: json['name'] as String,
         limits: PlanLimits.fromJson(json['limits'] as Map<String, dynamic>),
         usage: PlanUsage.fromJson(json['usage'] as Map<String, dynamic>),
+        priceMonthly: (json['priceMonthly'] as num?)?.toDouble(),
+        scheduled: json['scheduled'] == null ? null : ScheduledPlan.fromJson(json['scheduled'] as Map<String, dynamic>),
       );
 
   /// True once usage has reached (or somehow exceeded) the cap for [key] —

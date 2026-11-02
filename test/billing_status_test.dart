@@ -173,7 +173,7 @@ void main() {
     });
   });
 
-  group('plan-limit "Manage billing" link', () {
+  group('plan-limit "Upgrade plan" link', () {
     const cappedPlan = Plan(
       name: 'Full Access',
       limits: PlanLimits(warehouses: 1, products: 5),
@@ -200,14 +200,14 @@ void main() {
       await tester.pump(const Duration(milliseconds: 300));
     }
 
-    testWidgets('Owner at the product cap sees "Manage billing" on Products', (tester) async {
+    testWidgets('Owner at the product cap sees "Upgrade plan" on Products', (tester) async {
       await pumpScreen(
         tester,
         const ProductsScreen(),
         () => _Auth(status: 'active', plan: cappedPlan),
       );
 
-      expect(find.text('Manage billing'), findsOneWidget);
+      expect(find.text('Upgrade plan'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 
@@ -218,7 +218,7 @@ void main() {
         () => _Auth(status: 'active', plan: roomyPlan),
       );
 
-      expect(find.text('Manage billing'), findsNothing);
+      expect(find.text('Upgrade plan'), findsNothing);
     });
 
     testWidgets('a non-Owner at the cap does not see the billing link (only the owner can act on it)',
@@ -229,18 +229,75 @@ void main() {
         () => _Auth(status: 'active', role: 'Administrator', plan: cappedPlan),
       );
 
-      expect(find.text('Manage billing'), findsNothing);
+      expect(find.text('Upgrade plan'), findsNothing);
     });
 
-    testWidgets('Owner at the warehouse cap sees "Manage billing" on Warehouses', (tester) async {
+    testWidgets('Owner at the warehouse cap sees "Upgrade plan" on Warehouses', (tester) async {
       await pumpScreen(
         tester,
         const WarehousesScreen(),
         () => _Auth(status: 'active', plan: cappedPlan),
       );
 
-      expect(find.text('Manage billing'), findsOneWidget);
+      expect(find.text('Upgrade plan'), findsOneWidget);
       expect(tester.takeException(), isNull);
+    });
+  });
+
+  group('plan changes (step 15)', () {
+    test('the plan price and a scheduled change parse from /me', () {
+      final plan = Plan.fromJson({
+        'name': 'Business',
+        'priceMonthly': 25000,
+        'scheduled': {'name': 'Starter', 'priceMonthly': 10000, 'at': '2026-11-20T23:00:00.000Z'},
+        'limits': {'users': null, 'warehouses': null, 'products': null},
+        'usage': {'users': 3, 'warehouses': 1, 'products': 40},
+      });
+      expect(plan.priceMonthly, 25000);
+      expect(plan.scheduled!.name, 'Starter');
+      expect(plan.scheduled!.priceMonthly, 10000);
+      expect(plan.scheduled!.at, DateTime.parse('2026-11-20T23:00:00.000Z').toLocal());
+    });
+
+    test('an older server without them still parses', () {
+      final plan = Plan.fromJson({
+        'name': 'Full Access',
+        'limits': {'users': null, 'warehouses': 1, 'products': null},
+        'usage': {'users': 1, 'warehouses': 1, 'products': 0},
+      });
+      expect(plan.priceMonthly, isNull);
+      expect(plan.scheduled, isNull);
+    });
+
+    final scheduledPlan = Plan(
+      name: 'Business',
+      priceMonthly: 25000,
+      scheduled: ScheduledPlan(name: 'Starter', priceMonthly: 10000, at: DateTime(2026, 11, 21)),
+      limits: const PlanLimits(),
+      usage: const PlanUsage(users: 1, warehouses: 1, products: 1),
+    );
+
+    testWidgets('the dashboard shows the plan, its price and the change coming', (tester) async {
+      await _pumpDashboard(
+        tester,
+        () => _Auth(status: 'active', currentPeriodEnd: DateTime(2026, 11, 21), plan: scheduledPlan),
+      );
+      expect(find.byKey(const Key('hero-plan')), findsOneWidget);
+      expect(find.textContaining('Business plan'), findsOneWidget);
+      expect(find.textContaining('a month'), findsOneWidget);
+      expect(find.byKey(const Key('hero-plan-scheduled')), findsOneWidget);
+      expect(find.textContaining('Moves to Starter on'), findsOneWidget);
+      expect(find.byKey(const Key('hero-change-plan')), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('only the Owner is offered "Change plan"', (tester) async {
+      await _pumpDashboard(
+        tester,
+        () => _Auth(status: 'active', role: 'Administrator', currentPeriodEnd: DateTime(2026, 11, 21), plan: scheduledPlan),
+      );
+      expect(find.byKey(const Key('hero-plan')), findsOneWidget);
+      expect(find.byKey(const Key('hero-change-plan')), findsNothing);
     });
   });
 }

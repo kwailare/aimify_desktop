@@ -48,12 +48,12 @@ class WarehousesScreen extends ConsumerWidget {
               title: 'Warehouses',
               subtitle: subtitle,
               actions: [
-                if (atWarehouseCap && isOwner) const ManageBillingLink(),
+                if (atWarehouseCap && isOwner) const ManageBillingLink(label: 'Upgrade plan'),
                 Tooltip(
                   message: !canCreate
                       ? "Your role can't add warehouses"
                       : atWarehouseCap
-                          ? 'Your plan has reached its warehouse limit — disable one to free a slot'
+                          ? 'Your plan has reached its warehouse limit — disable one, or the Owner can upgrade the plan'
                           : '',
                   child: ElevatedButton.icon(
                     onPressed: (!canCreate || atWarehouseCap)

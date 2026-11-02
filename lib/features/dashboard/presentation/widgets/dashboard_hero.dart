@@ -99,6 +99,7 @@ class DashboardHero extends StatelessWidget {
                       trialEndsAt: me.organization!.trialEndsAt,
                       currentPeriodEnd: me.organization!.currentPeriodEnd,
                       cancelAtPeriodEnd: me.organization!.cancelAtPeriodEnd,
+                      plan: me.plan,
                     )
                   : const _OnboardingChip();
 
@@ -138,6 +139,7 @@ class _OrgStatusPanel extends StatelessWidget {
     required this.role,
     required this.subscriptionStatus,
     required this.trialEndsAt,
+    this.plan,
     required this.currentPeriodEnd,
     required this.cancelAtPeriodEnd,
   });
@@ -155,6 +157,9 @@ class _OrgStatusPanel extends StatelessWidget {
   /// The owner cancelled, but access continues normally until
   /// [currentPeriodEnd] — purely informational, nothing to gate on this.
   final bool cancelAtPeriodEnd;
+
+  /// The plan, its price, and a cheaper one waiting for the period end.
+  final Plan? plan;
 
   @override
   Widget build(BuildContext context) {
@@ -220,6 +225,16 @@ class _OrgStatusPanel extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 3),
+          if (plan != null)
+            Text(
+              plan!.priceMonthly == null
+                  ? '${plan!.name} plan'
+                  : '${plan!.name} plan · ${currencyFormat.format(plan!.priceMonthly)} a month',
+              key: const Key('hero-plan'),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+              ),
+            ),
           Text(
             warehouseName == null ? role : '$warehouseName · $role',
             style: theme.textTheme.bodySmall?.copyWith(
@@ -256,6 +271,22 @@ class _OrgStatusPanel extends StatelessWidget {
               ),
             ),
           ],
+          if (plan?.scheduled != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              'Moves to ${plan!.scheduled!.name} on ${dateFormat.format(plan!.scheduled!.at)}',
+              key: const Key('hero-plan-scheduled'),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.55),
+                fontSize: 11,
+              ),
+            ),
+          ],
+          if (role == 'Owner' && !isPastDue)
+            const Align(
+              alignment: Alignment.centerLeft,
+              child: ManageBillingLink(key: Key('hero-change-plan'), label: 'Change plan'),
+            ),
           if (trialProgress != null && daysLeft != null) ...[
             const SizedBox(height: 12),
             ClipRRect(
