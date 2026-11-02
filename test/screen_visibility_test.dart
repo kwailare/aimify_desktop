@@ -1,7 +1,7 @@
 // Which sections of the app are visible at all. Screens backed by the API
 // follow the person's `*.view` permissions from `/me` (the Owner's Roles &
-// permissions grid on the website); Purchases, Expenses and Reports, which
-// have no server permissions yet, keep their fixed role rules. Covers the
+// permissions grid on the website); Reports shows when any report may be
+// seen (stock, sales or purchases). Covers the
 // pure rule, the sidebar (fewer tiles, and the highlight still lands on the
 // right one), and the router (a hidden screen can't be reached by a stale
 // link, a role change, or the Owner removing a view while it's open).
@@ -80,14 +80,13 @@ void main() {
       );
     });
 
-    test('Sales Staff by default: stock, warehouses (read-only) and the customer side', () {
+    test('Sales Staff by default: stock, warehouses (read-only), the customer side and reports', () {
       final visible = _visible('Sales Staff');
       expect(visible, containsAll([AppScreen.products, AppScreen.inventory, AppScreen.warehouses,
-          AppScreen.customers, AppScreen.creditsDebts]));
+          AppScreen.customers, AppScreen.creditsDebts, AppScreen.reports]));
       expect(
         visible,
-        isNot(anyOf(contains(AppScreen.suppliers), contains(AppScreen.purchases),
-            contains(AppScreen.expenses), contains(AppScreen.reports))),
+        isNot(anyOf(contains(AppScreen.suppliers), contains(AppScreen.purchases), contains(AppScreen.expenses))),
       );
     });
 
@@ -116,9 +115,12 @@ void main() {
       expect(isScreenVisible('Sales Staff', ['products.view'], AppScreen.creditsDebts), isFalse);
     });
 
-    test('Reports keeps its role rule regardless of the grid', () {
-      expect(isScreenVisible('Sales Staff', defaultPermissionsFor('Owner'), AppScreen.reports), isFalse);
-      expect(isScreenVisible('Accountant / Finance', const [], AppScreen.reports), isTrue);
+    test('Reports shows when any report may be seen', () {
+      expect(isScreenVisible('Sales Staff', const ['sales.view'], AppScreen.reports), isTrue);
+      expect(isScreenVisible('Accountant / Finance', const ['purchases.view'], AppScreen.reports), isTrue);
+      expect(isScreenVisible('Inventory Staff', const ['stock.view'], AppScreen.reports), isTrue);
+      expect(isScreenVisible('Accountant / Finance', const ['expenses.view', 'customers.view'], AppScreen.reports), isFalse);
+      expect(isScreenVisible('Owner', const [], AppScreen.reports), isFalse);
     });
 
     test('Expenses follows expenses.view', () {
@@ -188,10 +190,10 @@ void main() {
         _RoleAuth('Sales Staff', asGranted(['customers.read']).where((p) => p != 'warehouses.view').toList()),
       );
 
-      for (final label in ['Dashboard', 'Products', 'Inventory', 'Customers', 'Credits & Debts']) {
+      for (final label in ['Dashboard', 'Products', 'Inventory', 'Customers', 'Credits & Debts', 'Reports']) {
         expect(find.text(label), findsOneWidget, reason: label);
       }
-      for (final label in ['Warehouses', 'Suppliers', 'Purchases', 'Expenses', 'Reports']) {
+      for (final label in ['Warehouses', 'Suppliers', 'Purchases', 'Expenses']) {
         expect(find.text(label), findsNothing, reason: label);
       }
     });

@@ -1113,6 +1113,134 @@ is 0) and `archived` (archived but still holding stock, still counted).
 `category: null` means uncategorised. Subtotals by category and by warehouse
 always add up to `totals`.
 
+### Reports for a period: common query
+
+The sales, purchase, profit & loss and stock movement reports below share:
+`from` (inclusive) and `to` (exclusive) instants, default this month (local);
+`tz` (minutes to add to UTC for local time, default `60`, Lagos) so days and
+months start at local midnight; and, where there is a breakdown by period,
+`bucket` (`day` or `month`; default `day` for up to 62 days). A period is at
+most 732 days. Each filter is optional. `400` for a bad date, period,
+bucket, tz or filter.
+
+Lists of documents come newest first, at most 1000 (2000 movements), with
+`truncated: true` when there were more. `people` (where present) is
+`[{ id, name }]` of the organization's members, to filter by staff.
+
+### `GET /api/v1/reports/sales`
+
+Needs `sales.view`. Completed sales in the period. Filters: `warehouseId`,
+`customerId` (`walk-in` for sales without a customer), `userId` (who made
+the sale), `productId`.
+
+```json
+{
+  "range": { "from": "...", "to": "..." }, "bucket": "day", "filters": { "customerId": "walk-in" },
+  "totals": { "count": 3, "units": 12, "subtotal": 1380, "discount": 30, "tax": 35, "total": 1385,
+              "paid": 1150, "outstanding": 235, "revenue": 1350, "cogs": 900, "grossProfit": 450,
+              "margin": 33.33, "averageSale": 461.67 },
+  "voided": { "count": 1, "total": 150 },
+  "byPeriod": [{ "bucket": "2026-10-05", "count": 1, "units": 3, "total": 385, "paid": 150, "outstanding": 235,
+                 "revenue": 350, "cogs": 250, "grossProfit": 100, "margin": 28.57 }],
+  "byProduct": [{ "productId": "uuid", "name": "Rice", "sku": "R", "unit": "bag", "sales": 2, "units": 6,
+                  "revenue": 900, "cogs": 600, "grossProfit": 300, "margin": 33.33 }],
+  "byCustomer": [{ "customerId": null, "name": "Walk-in", "count": 2, "...": "same figures as byPeriod" }],
+  "byStaff": [{ "userId": "uuid", "name": "Sade", "...": "same figures" }],
+  "byWarehouse": [{ "warehouseId": "uuid", "name": "Lagos", "...": "same figures" }],
+  "sales": [{ "id": "uuid", "reference": "INV-0003", "saleDate": "...", "customerId": null, "customer": "Walk-in",
+              "warehouse": "Kano", "staff": "Ada", "subtotal": 400, "discount": 0, "tax": 0, "total": 400,
+              "paid": 400, "outstanding": 0 }],
+  "truncated": false,
+  "people": [{ "id": "uuid", "name": "Ada" }]
+}
+```
+
+`total` includes tax; `revenue` is goods after the sale's discount, before
+tax; `cogs` is each line's cost when it was sold. Products are at their line
+prices (before the sale's discount). With `productId`, revenue, cost and
+profit are that product's lines; counts and money columns are the sales that
+include it. `paid` includes what later payments (on the sale or on the
+account) settled.
+
+### `GET /api/v1/reports/purchases`
+
+Needs `purchases.view`. Purchases ordered in the period (by `orderDate`;
+drafts and cancelled ones left out). Filters: `supplierId`, `warehouseId`,
+`productId` (purchases that include it; units and values are that product's
+lines).
+
+```json
+{
+  "totals": { "count": 2, "subtotal": 6350, "discount": 0, "tax": 0, "total": 6350, "paid": 1300, "unpaid": 5050,
+              "unitsOrdered": 80, "unitsReceived": 50, "orderedValue": 6350, "receivedValue": 5000 },
+  "byStatus": [{ "status": "pending", "count": 1, "total": 1350 }],
+  "byPeriod": [{ "bucket": "2026-10-03", "count": 1, "total": 5000, "paid": 1000, "unpaid": 4000,
+                 "unitsOrdered": 50, "unitsReceived": 50, "receivedValue": 5000 }],
+  "bySupplier": [{ "supplierId": "uuid", "name": "Dangote", "...": "same figures" }],
+  "byWarehouse": [{ "warehouseId": "uuid", "name": "Kano", "...": "same figures" }],
+  "byProduct": [{ "productId": "uuid", "name": "Rice", "sku": "R", "unit": "bag", "purchases": 1, "unitsOrdered": 30,
+                  "unitsReceived": 0, "orderedValue": 1350, "averageCost": 45, "minCost": 45, "maxCost": 45 }],
+  "purchases": [{ "id": "uuid", "reference": "PO-0004", "orderDate": "...", "supplierId": "uuid", "supplier": "Dangote",
+                  "warehouse": "Kano", "status": "pending", "total": 1350, "paid": 300, "unpaid": 1050 }],
+  "truncated": false
+}
+```
+
+### `GET /api/v1/reports/profit-loss`
+
+Needs `sales.view` **and** `expenses.view` (`403` otherwise). Filter:
+`warehouseId` (that warehouse's sales, purchases and expenses; account
+payments, which aren't tied to a warehouse, are then left out).
+
+```json
+{
+  "profit": { "salesCount": 3, "grossSales": 1380, "discounts": 30, "netSales": 1350, "cogs": 900,
+              "grossProfit": 450, "grossMargin": 33.33, "expenses": 250,
+              "expensesByCategory": [{ "categoryId": "uuid", "name": "Rent", "total": 200, "count": 1 }],
+              "netProfit": 200, "netMargin": 14.81, "taxCollected": 35 },
+  "cash": {
+    "in": { "sales": 1200, "customerAccounts": 100, "total": 1300, "byMethod": [{ "method": "cash", "total": 1200 }] },
+    "out": { "purchases": 300, "supplierAccounts": 1000, "expenses": 250, "total": 1550 },
+    "net": -250
+  },
+  "byPeriod": [{ "bucket": "2026-10-05", "netSales": 350, "cogs": 250, "grossProfit": 100, "expenses": 0,
+                 "netProfit": 100, "moneyIn": 0, "moneyOut": 0 }]
+}
+```
+
+- **Profit**: net sales (goods after discounts, before tax) − cost of goods
+  sold = gross profit; − expenses = net profit. Tax collected is shown apart
+  (it isn't the business's income). Voided sales and expenses don't count.
+- **Money in**: what customers paid on sales (at the sale or later, voided
+  ones included: the money was received) and on their account. **Money
+  out**: what was paid on purchases, to suppliers on account, and expenses.
+  Payments are dated when they were recorded. The part of an account payment
+  that settles an older sale or purchase isn't counted again.
+
+### `GET /api/v1/reports/stock-movements`
+
+Needs `stock.view`. Stock movements recorded in the period. Filters:
+`warehouseId`, `productId`, `userId`, `type` (`stock_in`, `stock_out`,
+`adjustment`, `count`), `source` (`manual`, `sale`, `purchase`).
+
+```json
+{
+  "totals": { "count": 13, "unitsIn": 291, "unitsOut": 26, "net": 265 },
+  "byType": [{ "type": "adjustment", "count": 1, "unitsIn": 0, "unitsOut": 3, "net": -3 }],
+  "byProduct": [{ "productId": "uuid", "name": "Rice", "sku": "R", "unit": "bag", "count": 5, "unitsIn": 140,
+                  "unitsOut": 16, "net": 124, "netValue": 6200 }],
+  "byUser": [{ "userId": "uuid", "name": "Sade", "count": 1, "unitsIn": 0, "unitsOut": 4, "net": -4 }],
+  "movements": [{ "id": "uuid", "createdAt": "...", "type": "stock_out", "quantity": -4, "previousStock": 97,
+                  "newStock": 93, "reason": "Sold on INV-0002", "productId": "uuid", "product": "Rice", "sku": "R",
+                  "unit": "bag", "warehouseId": "uuid", "warehouse": "Lagos", "userId": "uuid", "user": "Sade",
+                  "source": "sale", "saleId": "uuid", "purchaseId": null, "reference": "INV-0002" }],
+  "truncated": false,
+  "people": [{ "id": "uuid", "name": "Sade" }]
+}
+```
+
+`netValue` is the net change at the product's current purchase price.
+
 ## Customers and suppliers
 
 Header required on all of these: `Authorization: Bearer <token>`. The two

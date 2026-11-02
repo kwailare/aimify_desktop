@@ -95,8 +95,10 @@ Future<FakeValuationRepository> _pump(
     ),
   );
   await _settle(tester);
-  await tester.tap(find.text('Valuation'));
-  await _settle(tester);
+  if (find.text('Valuation').evaluate().isNotEmpty) {
+    await tester.tap(find.text('Valuation'));
+    await _settle(tester);
+  }
   return valuation;
 }
 
@@ -178,9 +180,10 @@ void main() {
         reason: 'the row and the total');
   });
 
-  testWidgets('without stock.view the tab explains instead of loading', (tester) async {
+  testWidgets('without stock.view the tab is not offered and nothing loads', (tester) async {
     final valuation = await _pump(tester, permissions: const ['products.view']);
-    expect(find.textContaining('needs to see both products and stock'), findsOneWidget);
+    expect(find.text('Valuation'), findsNothing);
+    expect(find.text('There are no reports you have permission to see.'), findsOneWidget);
     expect(valuation.requested, isEmpty);
   });
 

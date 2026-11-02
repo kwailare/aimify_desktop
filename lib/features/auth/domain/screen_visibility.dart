@@ -53,17 +53,6 @@ const _viewPermission = {
   AppScreen.expenses: Permissions.expensesView,
 };
 
-/// Reports have no backend permission yet, so they keep the fixed role rule
-/// they had before the permission grid.
-const _localScreensByRole = <String, Set<AppScreen>>{
-  'Owner': {AppScreen.reports},
-  'Administrator': {AppScreen.reports},
-  'Warehouse Manager': {AppScreen.reports},
-  'Inventory Staff': {AppScreen.reports},
-  'Sales Staff': {},
-  'Accountant / Finance': {AppScreen.reports},
-};
-
 /// True if someone with [role] and [permissions] should see [screen] at all.
 /// Dashboard is always visible; with no permissions (still loading, or an
 /// unknown role) everything else is hidden — fails closed, the same way
@@ -76,7 +65,11 @@ bool isScreenVisible(String? role, List<String> permissions, AppScreen screen) {
       return permissions.contains(Permissions.customersView) ||
           permissions.contains(Permissions.suppliersView);
     case AppScreen.reports:
-      return _localScreensByRole[role]?.contains(screen) ?? false;
+      // Each report follows its module: stock (overview, valuation, stock
+      // history), sales, purchases. The screen shows if any of them may.
+      return permissions.contains(Permissions.stockView) ||
+          permissions.contains(Permissions.salesView) ||
+          permissions.contains(Permissions.purchasesView);
     default:
       return permissions.contains(_viewPermission[screen]);
   }

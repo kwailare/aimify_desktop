@@ -11,6 +11,7 @@ import 'package:aimify_desktop/features/parties/domain/party.dart';
 import 'package:aimify_desktop/features/products/data/catalog_repository.dart';
 import 'package:aimify_desktop/features/purchases/data/purchases_repository.dart';
 import 'package:aimify_desktop/features/purchases/domain/purchase.dart';
+import 'package:aimify_desktop/features/reports/data/period_reports.dart';
 import 'package:aimify_desktop/features/reports/data/valuation_report.dart';
 import 'package:aimify_desktop/features/sales/data/sales_repository.dart';
 import 'package:aimify_desktop/features/sales/domain/sale.dart';
@@ -1194,6 +1195,146 @@ class FakeBusinessSummaryRepository implements BusinessSummaryRepository {
   }
 }
 
+/// What `GET /api/v1/reports/<kind>` sends for October: three sales (one on
+/// credit to Ada, a walk-in, one in Kano), two purchases, rent and fuel.
+Map<String, dynamic> fixtureReportJson(ReportKind kind) => switch (kind) {
+      ReportKind.sales => {
+          'bucket': 'day',
+          'totals': {
+            'count': 3, 'units': 12, 'subtotal': 1380, 'discount': 30, 'tax': 35, 'total': 1385, 'paid': 1150,
+            'outstanding': 235, 'revenue': 1350, 'cogs': 900, 'grossProfit': 450, 'margin': 33.33, 'averageSale': 461.67,
+          },
+          'voided': {'count': 1, 'total': 150},
+          'byPeriod': [
+            {'bucket': '2026-10-05', 'count': 1, 'units': 3, 'total': 385, 'paid': 150, 'outstanding': 235, 'revenue': 350, 'cogs': 250, 'grossProfit': 100, 'margin': 28.57},
+            {'bucket': '2026-10-20', 'count': 1, 'units': 4, 'total': 600, 'paid': 600, 'outstanding': 0, 'revenue': 600, 'cogs': 400, 'grossProfit': 200, 'margin': 33.33},
+            {'bucket': '2026-10-25', 'count': 1, 'units': 5, 'total': 400, 'paid': 400, 'outstanding': 0, 'revenue': 400, 'cogs': 250, 'grossProfit': 150, 'margin': 37.5},
+          ],
+          'byProduct': [
+            {'productId': 'p1', 'name': 'Rice 50kg', 'sku': 'RICE', 'unit': 'bag', 'sales': 2, 'units': 6, 'revenue': 900, 'cogs': 600, 'grossProfit': 300, 'margin': 33.33},
+            {'productId': 'p2', 'name': 'Semovita', 'sku': 'SEMO', 'unit': 'bag', 'sales': 2, 'units': 6, 'revenue': 480, 'cogs': 300, 'grossProfit': 180, 'margin': 37.5},
+          ],
+          'byCustomer': [
+            {'customerId': null, 'name': 'Walk-in', 'count': 2, 'units': 9, 'total': 1000, 'paid': 1000, 'outstanding': 0, 'revenue': 1000, 'cogs': 650, 'grossProfit': 350, 'margin': 35},
+            {'customerId': 'c1', 'name': 'Ada Stores', 'count': 1, 'units': 3, 'total': 385, 'paid': 150, 'outstanding': 235, 'revenue': 350, 'cogs': 250, 'grossProfit': 100, 'margin': 28.57},
+          ],
+          'byStaff': [
+            {'userId': 'u1', 'name': 'Ada Obi', 'count': 2, 'units': 8, 'total': 785, 'paid': 550, 'outstanding': 235, 'revenue': 750, 'cogs': 500, 'grossProfit': 250, 'margin': 33.33},
+            {'userId': 'u2', 'name': 'Sade Sales', 'count': 1, 'units': 4, 'total': 600, 'paid': 600, 'outstanding': 0, 'revenue': 600, 'cogs': 400, 'grossProfit': 200, 'margin': 33.33},
+          ],
+          'byWarehouse': [
+            {'warehouseId': 'w1', 'name': 'Main Warehouse', 'count': 2, 'units': 7, 'total': 985, 'paid': 750, 'outstanding': 235, 'revenue': 950, 'cogs': 650, 'grossProfit': 300, 'margin': 31.58},
+          ],
+          'sales': [
+            {'id': 's3', 'reference': 'INV-0005', 'saleDate': '2026-10-25T10:00:00.000Z', 'customerId': null, 'customer': 'Walk-in', 'warehouse': 'Kano', 'staff': 'Ada Obi', 'subtotal': 400, 'discount': 0, 'tax': 0, 'total': 400, 'paid': 400, 'outstanding': 0},
+            {'id': 's2', 'reference': 'INV-0002', 'saleDate': '2026-10-19T23:30:00.000Z', 'customerId': null, 'customer': 'Walk-in', 'warehouse': 'Main Warehouse', 'staff': 'Sade Sales', 'subtotal': 600, 'discount': 0, 'tax': 0, 'total': 600, 'paid': 600, 'outstanding': 0},
+            {'id': 's1', 'reference': 'INV-0001', 'saleDate': '2026-10-05T10:00:00.000Z', 'customerId': 'c1', 'customer': 'Ada Stores', 'warehouse': 'Main Warehouse', 'staff': 'Ada Obi', 'subtotal': 380, 'discount': 30, 'tax': 35, 'total': 385, 'paid': 150, 'outstanding': 235},
+          ],
+          'truncated': false,
+          'people': [
+            {'id': 'u1', 'name': 'Ada Obi'},
+            {'id': 'u2', 'name': 'Sade Sales'},
+          ],
+        },
+      ReportKind.purchases => {
+          'bucket': 'day',
+          'totals': {
+            'count': 2, 'subtotal': 6350, 'discount': 0, 'tax': 0, 'total': 6350, 'paid': 1300, 'unpaid': 5050,
+            'unitsOrdered': 80, 'unitsReceived': 50, 'orderedValue': 6350, 'receivedValue': 5000,
+          },
+          'byStatus': [
+            {'status': 'pending', 'count': 1, 'total': 1350},
+            {'status': 'received', 'count': 1, 'total': 5000},
+          ],
+          'byPeriod': [
+            {'bucket': '2026-10-03', 'count': 1, 'total': 5000, 'paid': 1000, 'unpaid': 4000, 'unitsOrdered': 50, 'unitsReceived': 50, 'receivedValue': 5000},
+            {'bucket': '2026-10-12', 'count': 1, 'total': 1350, 'paid': 300, 'unpaid': 1050, 'unitsOrdered': 30, 'unitsReceived': 0, 'receivedValue': 0},
+          ],
+          'bySupplier': [
+            {'supplierId': 'sp1', 'name': 'Dangote Foods', 'count': 2, 'total': 6350, 'paid': 1300, 'unpaid': 5050, 'unitsOrdered': 80, 'unitsReceived': 50, 'receivedValue': 5000},
+          ],
+          'byWarehouse': [
+            {'warehouseId': 'w1', 'name': 'Main Warehouse', 'count': 1, 'total': 5000, 'paid': 1000, 'unpaid': 4000, 'unitsOrdered': 50, 'unitsReceived': 50, 'receivedValue': 5000},
+          ],
+          'byProduct': [
+            {'productId': 'p1', 'name': 'Rice 50kg', 'sku': 'RICE', 'unit': 'bag', 'purchases': 1, 'unitsOrdered': 50, 'unitsReceived': 50, 'orderedValue': 5000, 'averageCost': 100, 'minCost': 100, 'maxCost': 100},
+          ],
+          'purchases': [
+            {'id': 'pu2', 'reference': 'PO-0004', 'orderDate': '2026-10-12T00:00:00.000Z', 'supplierId': 'sp1', 'supplier': 'Dangote Foods', 'warehouse': 'Kano', 'status': 'pending', 'total': 1350, 'paid': 300, 'unpaid': 1050},
+            {'id': 'pu1', 'reference': 'PO-0001', 'orderDate': '2026-10-03T00:00:00.000Z', 'supplierId': 'sp1', 'supplier': 'Dangote Foods', 'warehouse': 'Main Warehouse', 'status': 'received', 'total': 5000, 'paid': 1000, 'unpaid': 4000},
+          ],
+          'truncated': false,
+        },
+      ReportKind.profitLoss => {
+          'bucket': 'day',
+          'profit': {
+            'salesCount': 3, 'grossSales': 1380, 'discounts': 30, 'netSales': 1350, 'cogs': 900, 'grossProfit': 450,
+            'grossMargin': 33.33, 'expenses': 250,
+            'expensesByCategory': [
+              {'categoryId': 'k1', 'name': 'Rent', 'total': 200, 'count': 1},
+              {'categoryId': 'k2', 'name': 'Fuel', 'total': 50, 'count': 1},
+            ],
+            'netProfit': 200, 'netMargin': 14.81, 'taxCollected': 35,
+          },
+          'cash': {
+            'in': {
+              'sales': 1200, 'customerAccounts': 100, 'total': 1300,
+              'byMethod': [
+                {'method': 'cash', 'total': 1200},
+                {'method': 'transfer', 'total': 100},
+              ],
+            },
+            'out': {'purchases': 300, 'supplierAccounts': 1000, 'expenses': 250, 'total': 1550},
+            'net': -250,
+          },
+          'byPeriod': [
+            {'bucket': '2026-10-05', 'netSales': 350, 'cogs': 250, 'grossProfit': 100, 'expenses': 0, 'netProfit': 100, 'moneyIn': 0, 'moneyOut': 0},
+            {'bucket': '2026-10-07', 'netSales': 0, 'cogs': 0, 'grossProfit': 0, 'expenses': 200, 'netProfit': -200, 'moneyIn': 0, 'moneyOut': 200},
+          ],
+        },
+      ReportKind.stockMovements => {
+          'totals': {'count': 3, 'unitsIn': 100, 'unitsOut': 7, 'net': 93},
+          'byType': [
+            {'type': 'adjustment', 'count': 1, 'unitsIn': 0, 'unitsOut': 3, 'net': -3},
+            {'type': 'stock_in', 'count': 1, 'unitsIn': 100, 'unitsOut': 0, 'net': 100},
+            {'type': 'stock_out', 'count': 1, 'unitsIn': 0, 'unitsOut': 4, 'net': -4},
+          ],
+          'byProduct': [
+            {'productId': 'p1', 'name': 'Rice 50kg', 'sku': 'RICE', 'unit': 'bag', 'count': 3, 'unitsIn': 100, 'unitsOut': 7, 'net': 93, 'netValue': 9300},
+          ],
+          'byUser': [
+            {'userId': 'u1', 'name': 'Ada Obi', 'count': 2, 'unitsIn': 100, 'unitsOut': 3, 'net': 97},
+            {'userId': 'u2', 'name': 'Sade Sales', 'count': 1, 'unitsIn': 0, 'unitsOut': 4, 'net': -4},
+          ],
+          'movements': [
+            {'id': 'm3', 'createdAt': '2026-10-20T09:00:00.000Z', 'type': 'stock_out', 'quantity': -4, 'previousStock': 97, 'newStock': 93, 'reason': 'Sold on INV-0002', 'productId': 'p1', 'product': 'Rice 50kg', 'sku': 'RICE', 'unit': 'bag', 'warehouseId': 'w1', 'warehouse': 'Main Warehouse', 'userId': 'u2', 'user': 'Sade Sales', 'source': 'sale', 'saleId': 's2', 'purchaseId': null, 'reference': 'INV-0002'},
+            {'id': 'm2', 'createdAt': '2026-10-02T09:00:00.000Z', 'type': 'adjustment', 'quantity': -3, 'previousStock': 100, 'newStock': 97, 'reason': 'Damaged', 'productId': 'p1', 'product': 'Rice 50kg', 'sku': 'RICE', 'unit': 'bag', 'warehouseId': 'w1', 'warehouse': 'Main Warehouse', 'userId': 'u1', 'user': 'Ada Obi', 'source': 'manual', 'saleId': null, 'purchaseId': null, 'reference': null},
+            {'id': 'm1', 'createdAt': '2026-10-01T09:00:00.000Z', 'type': 'stock_in', 'quantity': 100, 'previousStock': 0, 'newStock': 100, 'reason': null, 'productId': 'p1', 'product': 'Rice 50kg', 'sku': 'RICE', 'unit': 'bag', 'warehouseId': 'w1', 'warehouse': 'Main Warehouse', 'userId': 'u1', 'user': 'Ada Obi', 'source': 'manual', 'saleId': null, 'purchaseId': null, 'reference': null},
+          ],
+          'truncated': false,
+          'people': [
+            {'id': 'u1', 'name': 'Ada Obi'},
+            {'id': 'u2', 'name': 'Sade Sales'},
+          ],
+        },
+    };
+
+class FakePeriodReportsRepository implements PeriodReportsRepository {
+  FakePeriodReportsRepository([Map<ReportKind, Map<String, dynamic>>? json]) : json = json ?? {};
+
+  /// What the server sends per report; [fixtureReportJson] when not given.
+  final Map<ReportKind, Map<String, dynamic>> json;
+  Object? error;
+  final asked = <ReportQuery>[];
+
+  @override
+  Future<Map<String, dynamic>> fetch(ReportQuery q) async {
+    asked.add(q);
+    if (error != null) throw error!;
+    return json[q.kind] ?? fixtureReportJson(q.kind);
+  }
+}
+
 List<Override> fakeDataOverrides({
   FakeProductsRepository? products,
   FakeWarehousesRepository? warehouses,
@@ -1208,6 +1349,7 @@ List<Override> fakeDataOverrides({
   FakeSupplierPricesRepository? supplierPrices,
   FakeExpensesRepository? expenses,
   FakeBusinessSummaryRepository? summary,
+  FakePeriodReportsRepository? reports,
   LocalStore? store,
 }) =>
     [
@@ -1230,4 +1372,5 @@ List<Override> fakeDataOverrides({
       supplierPricesRepositoryProvider.overrideWithValue(supplierPrices ?? FakeSupplierPricesRepository()),
       expensesRepositoryProvider.overrideWithValue(expenses ?? FakeExpensesRepository()),
       businessSummaryRepositoryProvider.overrideWithValue(summary ?? FakeBusinessSummaryRepository()),
+      periodReportsRepositoryProvider.overrideWithValue(reports ?? FakePeriodReportsRepository()),
     ];
