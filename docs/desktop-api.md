@@ -1010,6 +1010,58 @@ maintenance, Marketing, Bank charges, Taxes & levies and Other.
   (so a double click records once). `409 recurring_paused` when paused.
   `201 { "expense", "recurring" }`.
 
+## Dashboard
+
+### `GET /api/v1/dashboard`
+
+The business at a glance for a period, against an earlier one. Any signed-in
+role may ask; **each section is only included when the role may see that
+module** (`sales` and its profit need `sales.view`, `purchases` needs
+`purchases.view`, `expenses` needs `expenses.view`, `netProfit` needs both
+sales and expenses, `receivables` needs `customers.view`, `payables` needs
+`suppliers.view`, `stock` needs `products.view`).
+
+Query: `from` (inclusive) and `to` (exclusive) instants, `compareFrom` and
+`compareTo` (default: the same length just before), `bucket` (`day` or
+`month`; default `day` for up to 62 days) and `tz` (minutes to add to UTC
+for local time, default `60` for Lagos, so days and months start at local
+midnight). Without dates: this month so far against last month. Each period
+is at most 732 days. `400` for a bad date, period, bucket or tz.
+
+```json
+{
+  "range": { "from": "...", "to": "..." }, "compare": { "from": "...", "to": "..." }, "bucket": "day",
+  "sales": {
+    "total": 985, "count": 2, "revenue": 950, "cogs": 650, "grossProfit": 300, "margin": 31.58,
+    "previous": { "total": 800, "count": 1, "grossProfit": 300 }, "change": 23.13, "grossProfitChange": 0,
+    "trend": [{ "bucket": "2026-10-05", "sales": 385, "grossProfit": 100 }],
+    "topProducts": [{ "productId": "uuid", "name": "Rice", "sku": "R", "unit": "bag", "units": 6, "revenue": 900, "grossProfit": 300 }],
+    "topCustomers": [{ "customerId": "uuid", "name": "Ada", "total": 385, "count": 1 }],
+    "byWarehouse": [{ "warehouseId": "uuid", "name": "Lagos", "total": 985, "count": 2 }]
+  },
+  "purchases": { "total": 5000, "count": 1, "previous": { "total": 1000 }, "change": 400, "trend": [{ "bucket": "2026-10-03", "total": 5000 }] },
+  "expenses": { "total": 250, "count": 2, "previous": { "total": 100 }, "change": 150, "trend": [...], "byCategory": [{ "name": "Rent", "total": 200 }] },
+  "netProfit": { "value": 50, "previous": 200, "change": -75 },
+  "receivables": { "owed": 385, "overdue": 385, "parties": 1 },
+  "payables": { "owed": 6000, "overdue": 0, "parties": 1 },
+  "stock": { "valueAtCost": 19850, "valueAtRetail": 29000, "lowStock": 0, "outOfStock": 0,
+             "byWarehouse": [{ "warehouseId": "uuid", "name": "Lagos", "units": 253, "valueAtCost": 19850 }] }
+}
+```
+
+- **Sales** are at their total (tax included). **Profit leaves tax out**:
+  `revenue` is goods after discounts, `cogs` is what the goods sold cost
+  (each line's cost when it was sold), `grossProfit = revenue - cogs`,
+  `margin` is gross profit as a % of revenue. `netProfit` is gross profit
+  minus expenses.
+- Voided sales, draft and cancelled purchases (counted by order date) and
+  voided expenses don't count.
+- `change` values are % against the previous period, `null` when that was 0.
+  Top products are by revenue at their line prices (before the sale's
+  discount).
+- `receivables` / `payables` are as of now: what is owed and the part past its
+  due date.
+
 ## Reports
 
 ### `GET /api/v1/reports/valuation`

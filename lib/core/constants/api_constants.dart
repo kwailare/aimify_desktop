@@ -58,6 +58,7 @@ class ApiConstants {
   static String customerType(String id) => '$_v1/customer-types/$id';
   static const String debtReport = '$_v1/reports/debts';
   static String supplierPrices(String id) => '$_v1/suppliers/$id/prices';
+  static const String dashboard = '$_v1/dashboard';
   static const String expenses = '$_v1/expenses';
   static String expense(String id) => '$_v1/expenses/$id';
   static String expenseVoid(String id) => '$_v1/expenses/$id/void';

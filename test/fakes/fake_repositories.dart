@@ -1,5 +1,6 @@
 import 'package:aimify_desktop/features/credits_debts/data/debt_report.dart';
 import 'package:aimify_desktop/features/customers/data/customer_types.dart';
+import 'package:aimify_desktop/features/dashboard/data/business_summary.dart';
 import 'package:aimify_desktop/features/expenses/data/expenses_repository.dart';
 import 'package:aimify_desktop/features/expenses/domain/expense.dart';
 import 'package:aimify_desktop/features/inventory/data/inventory_repository.dart';
@@ -1110,6 +1111,89 @@ class FakeExpensesRepository implements ExpensesRepository {
   }
 }
 
+/// A month of business, as `GET /api/v1/dashboard` sends it to an Owner.
+Map<String, dynamic> fixtureSummaryJson({DateTime? now}) {
+  final n = now ?? DateTime.now();
+  String day(int d) => '${n.year}-${n.month.toString().padLeft(2, '0')}-${d.toString().padLeft(2, '0')}';
+  return {
+    'bucket': 'day',
+    'sales': {
+      'total': 210000,
+      'count': 3,
+      'revenue': 200000,
+      'cogs': 150000,
+      'grossProfit': 50000,
+      'margin': 25,
+      'previous': {'total': 150000, 'count': 2, 'grossProfit': 40000},
+      'change': 40,
+      'grossProfitChange': 25,
+      'trend': [
+        {'bucket': day(1), 'sales': 70000, 'grossProfit': 20000},
+        {'bucket': day(n.day), 'sales': 140000, 'grossProfit': 30000},
+      ],
+      'topProducts': [
+        {'productId': 'p1', 'name': 'Golden Penny Rice 50kg', 'sku': 'R', 'unit': 'bag', 'units': 2, 'revenue': 140000, 'grossProfit': 30000},
+        {'productId': 'p2', 'name': 'Peak Milk', 'sku': 'M', 'unit': 'carton', 'units': 4, 'revenue': 60000, 'grossProfit': 20000},
+      ],
+      'topCustomers': [
+        {'customerId': 'c1', 'name': 'Ada Stores', 'total': 140000, 'count': 2},
+      ],
+      'byWarehouse': [
+        {'warehouseId': 'w1', 'name': 'Main Warehouse', 'total': 210000, 'count': 3},
+      ],
+    },
+    'purchases': {
+      'total': 300000,
+      'count': 1,
+      'previous': {'total': 0},
+      'change': null,
+      'trend': [
+        {'bucket': day(1), 'total': 300000},
+      ],
+    },
+    'expenses': {
+      'total': 20000,
+      'count': 2,
+      'previous': {'total': 10000},
+      'change': 100,
+      'trend': [
+        {'bucket': day(n.day), 'total': 20000},
+      ],
+      'byCategory': [
+        {'name': 'Rent', 'total': 20000},
+      ],
+    },
+    'netProfit': {'value': 30000, 'previous': 30000, 'change': 0},
+    'receivables': {'owed': 70000, 'overdue': 25000, 'parties': 1},
+    'payables': {'owed': 100000, 'overdue': 0, 'parties': 1},
+    'stock': {
+      'valueAtCost': 900000,
+      'valueAtRetail': 1200000,
+      'lowStock': 1,
+      'outOfStock': 0,
+      'byWarehouse': [
+        {'warehouseId': 'w1', 'name': 'Main Warehouse', 'units': 15, 'valueAtCost': 900000},
+      ],
+    },
+  };
+}
+
+class FakeBusinessSummaryRepository implements BusinessSummaryRepository {
+  FakeBusinessSummaryRepository([this.json]);
+
+  /// What the server sends; [fixtureSummaryJson] when not given.
+  Map<String, dynamic>? json;
+  Object? error;
+  final asked = <DashboardPeriod>[];
+
+  @override
+  Future<BusinessSummary> fetch(DashboardPeriod period, {DateTime? now}) async {
+    asked.add(period);
+    if (error != null) throw error!;
+    return BusinessSummary.fromJson(period, json ?? fixtureSummaryJson(now: now));
+  }
+}
+
 List<Override> fakeDataOverrides({
   FakeProductsRepository? products,
   FakeWarehousesRepository? warehouses,
@@ -1123,6 +1207,7 @@ List<Override> fakeDataOverrides({
   FakeDebtReportRepository? debts,
   FakeSupplierPricesRepository? supplierPrices,
   FakeExpensesRepository? expenses,
+  FakeBusinessSummaryRepository? summary,
   LocalStore? store,
 }) =>
     [
@@ -1144,4 +1229,5 @@ List<Override> fakeDataOverrides({
       debtReportRepositoryProvider.overrideWithValue(debts ?? FakeDebtReportRepository()),
       supplierPricesRepositoryProvider.overrideWithValue(supplierPrices ?? FakeSupplierPricesRepository()),
       expensesRepositoryProvider.overrideWithValue(expenses ?? FakeExpensesRepository()),
+      businessSummaryRepositoryProvider.overrideWithValue(summary ?? FakeBusinessSummaryRepository()),
     ];

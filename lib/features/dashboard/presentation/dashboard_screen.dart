@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/widgets/section_header.dart';
 import '../../auth/presentation/auth_controller.dart';
+import 'widgets/business_overview.dart';
 import 'widgets/dashboard_hero.dart';
 import 'widgets/low_stock_watchlist_card.dart';
 import 'widgets/metric_bento_grid.dart';
@@ -10,9 +11,10 @@ import 'widgets/recent_activity_card.dart';
 import 'widgets/setup_checklist_card.dart';
 
 /// Home screen. [DashboardHero] (greeting, organization, subscription) comes
-/// straight from `GET /api/v1/me`; everything below it is derived from the
-/// live products, warehouses, alerts and stock ledger — see
-/// `data/dashboard_metrics.dart`.
+/// straight from `GET /api/v1/me`; [BusinessOverview] (sales, profit,
+/// spending, debts and charts for a period) from `GET /api/v1/dashboard`;
+/// the inventory snapshot below from the live products, warehouses, alerts
+/// and stock ledger — see `data/dashboard_metrics.dart`.
 class DashboardScreen extends ConsumerWidget {
   const DashboardScreen({super.key});
 
@@ -45,6 +47,7 @@ class DashboardScreen extends ConsumerWidget {
             ),
             const SizedBox(height: 32),
             const SetupChecklistCard(),
+            const BusinessOverview(),
             const SectionHeader(
               title: 'Inventory snapshot',
               subtitle: 'Stock value, alerts and warehouses at a glance',
