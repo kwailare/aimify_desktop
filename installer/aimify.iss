@@ -1,5 +1,7 @@
 ; Inno Setup script for the Aimify desktop app.
-; Build the app first, then compile this:
+; installer\build-installer.ps1 does all of this, and signs the app, the
+; setup and the uninstaller when the code-signing certificate is available.
+; By hand: build the app first, then compile this:
 ;   flutter build windows --release --dart-define=AIMIFY_API_URL=https://www.aimify.app
 ;   (copy build\windows\x64\runner\Release to dist\aimify-production)
 ;   "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\aimify.iss
@@ -15,6 +17,12 @@ AppId={{6F1D2A0C-4C57-4B0E-9B5A-A1F1D0A11F01}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher={#AppPublisher}
+AppPublisherURL=https://www.aimify.app
+AppSupportURL=https://www.aimify.app
+VersionInfoVersion={#AppVersion}
+VersionInfoCompany={#AppPublisher}
+VersionInfoDescription={#AppName} Setup
+VersionInfoProductName={#AppName}
 ; Installs to C:\Program Files\Aimify (the 64-bit Program Files folder),
 ; which needs administrator rights - Windows asks for them once.
 PrivilegesRequired=admin
@@ -33,6 +41,11 @@ WizardSmallImageFile=assets\wizard-small-1x.bmp,assets\wizard-small-2x.bmp
 UninstallDisplayIcon={app}\{#AppExe}
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
+; Signing: ISCC /DSign /Saimify="signtool sign ... $f" (see build-installer.ps1).
+#ifdef Sign
+SignTool=aimify
+SignedUninstaller=yes
+#endif
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Shortcuts:"
