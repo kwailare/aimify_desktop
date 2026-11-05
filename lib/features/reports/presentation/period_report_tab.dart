@@ -1,6 +1,4 @@
-import 'dart:io';
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -15,6 +13,7 @@ import '../../products/data/products_repository.dart';
 import '../../warehouses/data/warehouses_repository.dart';
 import '../data/period_reports.dart';
 import '../data/report_document.dart';
+import '../../../shared/utils/file_dialogs.dart';
 
 const _good = Color(0xFF2F8F5B);
 
@@ -139,15 +138,8 @@ class _PeriodReportTabState extends ConsumerState<PeriodReportTab> {
   Future<void> _excel(ReportDocument doc) async {
     try {
       final bytes = Uint8List.fromList(buildReportExcel(doc));
-      final path = await FilePicker.platform.saveFile(
-        dialogTitle: 'Save ${doc.title.toLowerCase()}',
-        fileName: '${doc.fileStem}.xlsx',
-        bytes: bytes,
-        type: FileType.custom,
-        allowedExtensions: const ['xlsx'],
-      );
+      final path = await saveBytesAs(dialogTitle: 'Save ${doc.title.toLowerCase()}', fileName: '${doc.fileStem}.xlsx', bytes: bytes, extension: 'xlsx');
       if (path == null) return;
-      await File(path).writeAsBytes(bytes);
       if (mounted) _say('${doc.title} saved to $path');
     } catch (e) {
       if (mounted) _say("Couldn't save the report: ${friendlyError(e)}");

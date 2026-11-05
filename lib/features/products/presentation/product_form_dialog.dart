@@ -76,6 +76,7 @@ class _ProductFormDialogState extends ConsumerState<ProductFormDialog> {
 
   Future<void> _pickImage() async {
     final result = await FilePicker.platform.pickFiles(
+      lockParentWindow: true,
       type: FileType.custom,
       allowedExtensions: const ['png', 'jpg', 'jpeg', 'webp'],
       withData: true,

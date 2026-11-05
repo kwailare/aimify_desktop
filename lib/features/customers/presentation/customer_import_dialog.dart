@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
@@ -14,6 +13,7 @@ import '../../parties/data/parties_repository.dart';
 import '../../parties/domain/party.dart';
 import '../data/customer_excel.dart';
 import '../data/customer_types.dart';
+import '../../../shared/utils/file_dialogs.dart';
 
 enum _Step { pick, preview, importing, done }
 
@@ -54,15 +54,8 @@ class _CustomerImportDialogState extends ConsumerState<CustomerImportDialog> {
   Future<void> _saveTemplate() async {
     try {
       final bytes = Uint8List.fromList(buildPartyImportTemplate(widget.type));
-      final path = await FilePicker.platform.saveFile(
-        dialogTitle: 'Save $_noun template',
-        fileName: 'aimify-$_noun-import-template.xlsx',
-        bytes: bytes,
-        type: FileType.custom,
-        allowedExtensions: const ['xlsx'],
-      );
+      final path = await saveBytesAs(dialogTitle: 'Save $_noun template', fileName: 'aimify-$_noun-import-template.xlsx', bytes: bytes, extension: 'xlsx');
       if (path == null) return;
-      await File(path).writeAsBytes(bytes);
       if (mounted) _toast('Template saved.');
     } catch (e) {
       if (mounted) _toast("Couldn't save the template: ${friendlyError(e)}");
@@ -71,6 +64,7 @@ class _CustomerImportDialogState extends ConsumerState<CustomerImportDialog> {
 
   Future<({String name, List<int> bytes})?> _pickWithDialog() async {
     final result = await FilePicker.platform.pickFiles(
+      lockParentWindow: true,
       type: FileType.custom,
       allowedExtensions: const ['xlsx'],
       withData: true,

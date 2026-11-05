@@ -1,7 +1,5 @@
-import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -12,6 +10,7 @@ import '../../../shared/widgets/status_pill.dart';
 import '../../customers/data/customer_excel.dart';
 import '../../parties/data/parties_repository.dart';
 import '../../parties/domain/party.dart';
+import '../../../shared/utils/file_dialogs.dart';
 
 /// Things done to suppliers from both the list and a supplier's page.
 
@@ -77,15 +76,8 @@ Future<void> restoreSupplier(BuildContext context, WidgetRef ref, Party s) async
 Future<void> exportSuppliers(BuildContext context, List<Party> suppliers) async {
   try {
     final bytes = Uint8List.fromList(buildSupplierExport(suppliers));
-    final path = await FilePicker.platform.saveFile(
-      dialogTitle: 'Save supplier list',
-      fileName: 'suppliers.xlsx',
-      bytes: bytes,
-      type: FileType.custom,
-      allowedExtensions: const ['xlsx'],
-    );
+    final path = await saveBytesAs(dialogTitle: 'Save supplier list', fileName: 'suppliers.xlsx', bytes: bytes, extension: 'xlsx');
     if (path == null) return;
-    await File(path).writeAsBytes(bytes);
     if (context.mounted) _toast(context, '${suppliers.length} supplier${suppliers.length == 1 ? '' : 's'} saved to $path');
   } catch (e) {
     if (context.mounted) _toast(context, "Couldn't save the list: ${friendlyError(e)}");

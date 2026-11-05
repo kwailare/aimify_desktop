@@ -1,7 +1,5 @@
-import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -19,6 +17,7 @@ import '../../parties/domain/party.dart';
 import '../../parties/presentation/credit_entry_dialog.dart';
 import '../data/debt_excel.dart';
 import '../data/debt_report.dart';
+import '../../../shared/utils/file_dialogs.dart';
 
 void _toast(BuildContext context, String message) => ScaffoldMessenger.of(context)
   ..hideCurrentSnackBar()
@@ -42,15 +41,8 @@ Future<void> _exportReport(BuildContext context, DebtReport report) async {
   final who = report.type == PartyType.customer ? 'customers' : 'suppliers';
   try {
     final bytes = Uint8List.fromList(buildDebtReportExcel(report));
-    final path = await FilePicker.platform.saveFile(
-      dialogTitle: 'Save debt report',
-      fileName: 'debt-report-$who.xlsx',
-      bytes: bytes,
-      type: FileType.custom,
-      allowedExtensions: const ['xlsx'],
-    );
+    final path = await saveBytesAs(dialogTitle: 'Save debt report', fileName: 'debt-report-$who.xlsx', bytes: bytes, extension: 'xlsx');
     if (path == null) return;
-    await File(path).writeAsBytes(bytes);
     if (context.mounted) _toast(context, 'Debt report saved to $path');
   } catch (e) {
     if (context.mounted) _toast(context, "Couldn't save the report: ${friendlyError(e)}");

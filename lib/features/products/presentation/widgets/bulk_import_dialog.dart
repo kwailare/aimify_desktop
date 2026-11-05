@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
@@ -18,6 +17,7 @@ import '../../../warehouses/domain/warehouse.dart';
 import '../../data/catalog_repository.dart';
 import '../../data/product_excel_import.dart';
 import '../../data/products_repository.dart';
+import '../../../../shared/utils/file_dialogs.dart';
 
 enum _Step { pick, preview, importing, done }
 
@@ -64,17 +64,8 @@ class _BulkImportDialogState extends ConsumerState<BulkImportDialog> {
   Future<void> _downloadTemplate() async {
     try {
       final bytes = Uint8List.fromList(buildProductImportTemplate());
-      final path = await FilePicker.platform.saveFile(
-        dialogTitle: 'Save import template',
-        fileName: 'aimify-product-import-template.xlsx',
-        bytes: bytes,
-        type: FileType.custom,
-        allowedExtensions: const ['xlsx'],
-      );
+      final path = await saveBytesAs(dialogTitle: 'Save import template', fileName: 'aimify-product-import-template.xlsx', bytes: bytes, extension: 'xlsx');
       if (path == null) return;
-      // Desktop's save dialog only returns the chosen path — it doesn't
-      // write the file, unlike mobile/web, so this does it here.
-      await File(path).writeAsBytes(bytes);
       if (!mounted) return;
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
@@ -90,6 +81,7 @@ class _BulkImportDialogState extends ConsumerState<BulkImportDialog> {
   Future<void> _pickFile() async {
     setState(() => _pickError = null);
     final result = await FilePicker.platform.pickFiles(
+      lockParentWindow: true,
       type: FileType.custom,
       allowedExtensions: const ['xlsx'],
       withData: true,

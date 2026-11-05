@@ -1,7 +1,5 @@
-import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -13,6 +11,7 @@ import '../../parties/data/parties_repository.dart';
 import '../../parties/domain/party.dart';
 import '../data/customer_excel.dart';
 import '../data/customer_types.dart';
+import '../../../shared/utils/file_dialogs.dart';
 
 /// Things done to customers from both the list and a customer's page.
 
@@ -80,16 +79,8 @@ Future<void> exportCustomers(BuildContext context, WidgetRef ref, List<Party> cu
     final bytes = Uint8List.fromList(
       buildCustomerExport(customers, (c) => ref.read(customerTypeNameProvider(c))),
     );
-    final path = await FilePicker.platform.saveFile(
-      dialogTitle: 'Save customer list',
-      fileName: 'customers.xlsx',
-      bytes: bytes,
-      type: FileType.custom,
-      allowedExtensions: const ['xlsx'],
-    );
+    final path = await saveBytesAs(dialogTitle: 'Save customer list', fileName: 'customers.xlsx', bytes: bytes, extension: 'xlsx');
     if (path == null) return;
-    // On desktop the save dialog only picks the path.
-    await File(path).writeAsBytes(bytes);
     if (context.mounted) _toast(context, '${customers.length} customer${customers.length == 1 ? '' : 's'} saved to $path');
   } catch (e) {
     if (context.mounted) _toast(context, "Couldn't save the list: ${friendlyError(e)}");

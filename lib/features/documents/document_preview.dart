@@ -1,7 +1,5 @@
-import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pdf/pdf.dart';
@@ -10,6 +8,7 @@ import 'package:printing/printing.dart';
 import '../../shared/utils/friendly_error.dart';
 import '../auth/presentation/auth_controller.dart';
 import 'document_kit.dart';
+import '../../shared/utils/file_dialogs.dart';
 
 /// Builds one document's PDF with the shared [DocumentKit].
 typedef DocumentBuilder = Future<Uint8List> Function(DocumentKit kit);
@@ -68,15 +67,8 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen> {
     final messenger = ScaffoldMessenger.of(context);
     try {
       final bytes = await _pdf(PdfPageFormat.a4);
-      final path = await FilePicker.platform.saveFile(
-        dialogTitle: 'Save ${widget.title}',
-        fileName: widget.fileName,
-        type: FileType.custom,
-        allowedExtensions: const ['pdf'],
-      );
-      if (path == null) return;
-      final target = path.toLowerCase().endsWith('.pdf') ? path : '$path.pdf';
-      await File(target).writeAsBytes(bytes, flush: true);
+      final target = await saveBytesAs(dialogTitle: 'Save ${widget.title}', fileName: widget.fileName, bytes: bytes, extension: 'pdf');
+      if (target == null) return;
       messenger.showSnackBar(SnackBar(content: Text('Saved to $target')));
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text("Couldn't save the PDF: ${friendlyError(e)}")));

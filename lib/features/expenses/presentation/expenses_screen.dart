@@ -1,7 +1,5 @@
-import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -28,6 +26,7 @@ import 'expense_detail_dialog.dart';
 import 'expense_form_dialog.dart';
 import 'legacy_expenses_dialog.dart';
 import 'recurring_view.dart';
+import '../../../shared/utils/file_dialogs.dart';
 
 enum _Tab { expenses, recurring, report }
 
@@ -449,15 +448,8 @@ class _ExpenseReportViewState extends ConsumerState<ExpenseReportView> {
   Future<void> _excel(ExpenseReport report) async {
     try {
       final bytes = Uint8List.fromList(buildExpenseReportExcel(report));
-      final path = await FilePicker.platform.saveFile(
-        dialogTitle: 'Save expense report',
-        fileName: 'expenses-${DateFormat('yyyy-MM').format(report.from)}.xlsx',
-        bytes: bytes,
-        type: FileType.custom,
-        allowedExtensions: const ['xlsx'],
-      );
+      final path = await saveBytesAs(dialogTitle: 'Save expense report', fileName: 'expenses-${DateFormat('yyyy-MM').format(report.from)}.xlsx', bytes: bytes, extension: 'xlsx');
       if (path == null) return;
-      await File(path).writeAsBytes(bytes);
       if (mounted) {
         ScaffoldMessenger.of(context)
           ..hideCurrentSnackBar()

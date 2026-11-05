@@ -17,6 +17,7 @@ typedef PickedReceipt = ({String name, List<int> bytes});
 /// Lets tests stand in for the file picker.
 final receiptPickerProvider = Provider<Future<PickedReceipt?> Function()>((ref) => () async {
       final result = await FilePicker.platform.pickFiles(
+        lockParentWindow: true,
         type: FileType.custom,
         allowedExtensions: const ['png', 'jpg', 'jpeg', 'webp', 'pdf'],
         withData: true,
