@@ -40,6 +40,7 @@ class Party {
     this.totalPurchases = 0,
     this.purchaseCount = 0,
     this.lastPurchaseAt,
+    this.whatsappOptIn = false,
   });
 
   final String id;
@@ -82,6 +83,10 @@ class Party {
   final int purchaseCount;
   final DateTime? lastPurchaseAt;
 
+  /// Agreed to messages the business starts on WhatsApp (invoices,
+  /// receipts, reminders, purchase orders). Share buttons work without it.
+  final bool whatsappOptIn;
+
   /// What they can still buy on credit, or null without a limit.
   double? get creditLeft => creditLimit > 0 ? creditLimit - balanceOwed : null;
 
@@ -110,6 +115,7 @@ class Party {
         totalPurchases: totalPurchases,
         purchaseCount: purchaseCount,
         lastPurchaseAt: lastPurchaseAt,
+        whatsappOptIn: whatsappOptIn,
       );
 
   Party withInput(PartyInput input) => Party(
@@ -135,6 +141,7 @@ class Party {
         totalPurchases: totalPurchases,
         purchaseCount: purchaseCount,
         lastPurchaseAt: lastPurchaseAt,
+        whatsappOptIn: input.whatsappOptIn,
       );
 
   factory Party.fromJson(PartyType type, Map<String, dynamic> json) => Party(
@@ -159,6 +166,7 @@ class Party {
         totalPurchases: (json['totalPurchases'] as num?)?.toDouble() ?? 0,
         purchaseCount: (json['purchaseCount'] as num?)?.toInt() ?? 0,
         lastPurchaseAt: DateTime.tryParse(json['lastPurchaseAt'] as String? ?? '')?.toLocal(),
+        whatsappOptIn: json['whatsappOptIn'] == true,
       );
 }
 
@@ -176,6 +184,7 @@ class PartyInput {
     this.creditLimit = 0,
     this.customerTypeId,
     this.paymentTermsDays = 30,
+    this.whatsappOptIn = false,
   });
 
   final PartyType type;
@@ -191,6 +200,7 @@ class PartyInput {
   final String? customerTypeId;
 
   final int paymentTermsDays;
+  final bool whatsappOptIn;
 
   /// The request body. Customers send `creditLimit`, suppliers send
   /// `contactPerson` — the server refuses the other resource's field.
@@ -204,6 +214,7 @@ class PartyInput {
         if (type == PartyType.customer) 'creditLimit': creditLimit,
         if (type == PartyType.customer) 'customerTypeId': customerTypeId,
         'paymentTermsDays': paymentTermsDays,
+        'whatsappOptIn': whatsappOptIn,
       };
 
   factory PartyInput.fromJson(PartyType type, Map<String, dynamic> json) => PartyInput(
@@ -217,6 +228,7 @@ class PartyInput {
         creditLimit: (json['creditLimit'] as num?)?.toDouble() ?? 0,
         customerTypeId: json['customerTypeId'] as String?,
         paymentTermsDays: (json['paymentTermsDays'] as num?)?.toInt() ?? 30,
+        whatsappOptIn: json['whatsappOptIn'] == true,
       );
 
   Party toLocalParty(String id) => Party(
@@ -232,6 +244,7 @@ class PartyInput {
         isPending: true,
         customerTypeId: customerTypeId,
         paymentTermsDays: paymentTermsDays,
+        whatsappOptIn: whatsappOptIn,
       );
 }
 

@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/utils/formatters.dart';
 import '../../../shared/widgets/status_pill.dart';
+import '../../auth/presentation/auth_controller.dart';
 import '../../sales/domain/sale.dart';
+import '../../whatsapp/whatsapp_share.dart';
 import '../domain/party.dart';
 import 'credit_entry_dialog.dart';
 
@@ -81,6 +83,24 @@ class CreditEntryRow extends ConsumerWidget {
               color: raised ? theme.colorScheme.error : const Color(0xFF2F8F5B),
             ),
           ),
+          if (p != null && entry.receiptNumber != null && p.type == PartyType.customer)
+            IconButton(
+              key: ValueKey('whatsapp-receipt-${entry.id}'),
+              tooltip: 'Send the receipt on WhatsApp',
+              icon: const Icon(Icons.chat_outlined, size: 18),
+              onPressed: () => openWhatsApp(
+                context,
+                ref,
+                phone: p.phone,
+                text: receiptWhatsAppText(
+                  customer: p.name,
+                  business: ref.read(authControllerProvider).valueOrNull?.organization?.name ?? '',
+                  amount: entry.amount.abs(),
+                  reference: entry.receiptNumber!,
+                  balance: p.balanceOwed,
+                ),
+              ),
+            ),
           if (p != null && entry.receiptNumber != null)
             IconButton(
               key: ValueKey('print-receipt-${entry.id}'),

@@ -18,6 +18,7 @@ import '../../parties/presentation/credit_entry_row.dart';
 import '../../sales/data/sales_repository.dart';
 import '../../sales/domain/sale.dart';
 import '../../sales/presentation/sale_detail_dialog.dart';
+import '../../whatsapp/whatsapp_share.dart';
 import '../data/customer_types.dart';
 import 'customer_actions.dart';
 
@@ -154,6 +155,18 @@ class _CustomerProfileScreenState extends ConsumerState<CustomerProfileScreen> {
                     onPressed: c.balanceOwed > 0 ? () => entry(CreditKind.payment) : null,
                     icon: const Icon(Icons.payments_outlined, size: 18),
                     label: const Text('Record payment'),
+                  ),
+                if (c.overdue > 0)
+                  SendOnWhatsAppButton(
+                    key: const Key('customer-whatsapp-reminder'),
+                    label: 'Remind on WhatsApp',
+                    phone: c.phone,
+                    text: () => reminderWhatsAppText(
+                      customer: c.name,
+                      business: ref.read(authControllerProvider).valueOrNull?.organization?.name ?? '',
+                      overdue: c.overdue,
+                      balance: c.balanceOwed,
+                    ),
                   ),
                 if (!c.isPending)
                   OutlinedButton.icon(

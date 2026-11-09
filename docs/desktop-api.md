@@ -1301,6 +1301,13 @@ owns is a `400`; an unknown or another organization's type is a `400`.
 Both customers and suppliers also take `paymentTermsDays` (whole days, 0 to
 365, default 30): how long after a sale (or a received purchase) it is due.
 
+Both also take `whatsappOptIn` (`true`/`false`, default `false`): they agreed
+to WhatsApp messages the business starts. Only then do they get the
+automatic invoices, receipts and reminders (customers) or purchase orders
+(suppliers) the business turned on (website, WhatsApp page; see
+`docs/whatsapp-setup.md`). The app's "Send on WhatsApp" buttons, which open
+the person's own WhatsApp with the message written, don't depend on it.
+
 A new customer given a type but no `creditLimit` or `paymentTermsDays` takes
 the type's `defaultCreditLimit` (otherwise `0`) and `defaultPaymentTermsDays`
 (otherwise 30). Changing a customer's type later never changes them.

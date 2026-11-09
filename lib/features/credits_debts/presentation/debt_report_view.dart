@@ -9,12 +9,14 @@ import '../../../shared/utils/friendly_error.dart';
 import '../../../shared/widgets/async_state.dart';
 import '../../../shared/widgets/status_pill.dart';
 import '../../auth/domain/permissions.dart';
+import '../../auth/presentation/auth_controller.dart';
 import '../../auth/presentation/permissions_provider.dart';
 import '../../documents/debt_documents.dart';
 import '../../documents/document_preview.dart';
 import '../../parties/data/parties_repository.dart';
 import '../../parties/domain/party.dart';
 import '../../parties/presentation/credit_entry_dialog.dart';
+import '../../whatsapp/whatsapp_share.dart';
 import '../data/debt_excel.dart';
 import '../data/debt_report.dart';
 import '../../../shared/utils/file_dialogs.dart';
@@ -390,6 +392,23 @@ class WhoToChaseView extends ConsumerWidget {
                   ],
                 ),
                 const SizedBox(width: 12),
+                IconButton(
+                  key: ValueKey('chase-whatsapp-${r.id}'),
+                  tooltip: 'Remind them on WhatsApp',
+                  icon: const Icon(Icons.chat_outlined),
+                  onPressed: () => openWhatsApp(
+                    context,
+                    ref,
+                    phone: r.phone,
+                    text: reminderWhatsAppText(
+                      customer: r.name,
+                      business: ref.read(authControllerProvider).valueOrNull?.organization?.name ?? '',
+                      overdue: r.overdue,
+                      balance: r.balance,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
                 OutlinedButton(
                   onPressed: () => context.go('/customers/${r.id}'),
                   child: const Text('Open'),

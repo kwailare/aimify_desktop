@@ -6,6 +6,7 @@ import '../../../shared/utils/friendly_error.dart';
 import '../../../shared/widgets/async_state.dart';
 import '../../../shared/widgets/status_pill.dart';
 import '../../auth/domain/permissions.dart';
+import '../../auth/presentation/auth_controller.dart';
 import '../../auth/presentation/permissions_provider.dart';
 import '../../documents/document_preview.dart';
 import '../../documents/sale_documents.dart';
@@ -13,6 +14,7 @@ import '../../parties/data/parties_repository.dart';
 import '../../parties/domain/party.dart';
 import '../data/sales_repository.dart';
 import '../domain/sale.dart';
+import '../../whatsapp/whatsapp_share.dart';
 import 'sale_form_dialog.dart';
 
 StatusPill salePaymentPill(Sale sale) {
@@ -268,6 +270,26 @@ class SaleDetailDialog extends ConsumerWidget {
                             ),
                           ),
                           IconButton(
+                            key: Key('whatsapp-sale-receipt-$i'),
+                            tooltip: 'Send the receipt on WhatsApp',
+                            icon: const Icon(Icons.chat_outlined, size: 18),
+                            onPressed: () {
+                              final customer = _customerOf(ref, s);
+                              openWhatsApp(
+                                context,
+                                ref,
+                                phone: customer?.phone,
+                                text: receiptWhatsAppText(
+                                  customer: s.customerName,
+                                  business: ref.read(authControllerProvider).valueOrNull?.organization?.name ?? '',
+                                  amount: pay.amount,
+                                  reference: pay.receiptNumber ?? 'payment on ${s.reference}',
+                                  balance: customer?.balanceOwed ?? s.balance,
+                                ),
+                              );
+                            },
+                          ),
+                          IconButton(
                             key: Key('print-sale-receipt-$i'),
                             tooltip: 'Receipt (PDF)',
                             icon: const Icon(Icons.print_outlined, size: 18),
@@ -297,6 +319,22 @@ class SaleDetailDialog extends ConsumerWidget {
               icon: const Icon(Icons.print_outlined, size: 18),
               label: const Text('Print invoice'),
             ),
+            if (!s.isVoided)
+              SendOnWhatsAppButton(
+                key: const Key('whatsapp-invoice'),
+                // Watched: the customer list may still be loading.
+                phone: s.customerId == null
+                    ? null
+                    : ref
+                        .watch(partyListProvider(PartyType.customer))
+                        .where((c) => c.id == s.customerId)
+                        .firstOrNull
+                        ?.phone,
+                text: () => invoiceWhatsAppText(
+                  s,
+                  business: ref.read(authControllerProvider).valueOrNull?.organization?.name ?? '',
+                ),
+              ),
             if (canVoid)
               TextButton(
                 key: const Key('sale-void'),

@@ -7,6 +7,7 @@ import '../../../shared/utils/friendly_error.dart';
 import '../../../shared/widgets/async_state.dart';
 import '../../../shared/widgets/status_pill.dart';
 import '../../auth/domain/permissions.dart';
+import '../../auth/presentation/auth_controller.dart';
 import '../../auth/presentation/permissions_provider.dart';
 import '../../products/data/products_repository.dart';
 import '../data/purchases_repository.dart';
@@ -17,6 +18,7 @@ import '../../parties/data/parties_repository.dart';
 import '../../parties/domain/party.dart';
 import '../../warehouses/data/warehouses_repository.dart';
 import '../../warehouses/domain/warehouse.dart';
+import '../../whatsapp/whatsapp_share.dart';
 import 'purchase_form_dialog.dart';
 
 StatusPill purchaseStatusPill(PurchaseStatus status) => StatusPill(
@@ -351,6 +353,21 @@ class PurchaseDetailDialog extends ConsumerWidget {
               icon: const Icon(Icons.print_outlined, size: 18),
               label: const Text('Print / PDF'),
             ),
+            // The order to the supplier, while it is still to be delivered.
+            if (p.status == PurchaseStatus.draft || p.status == PurchaseStatus.pending)
+              SendOnWhatsAppButton(
+                key: const Key('whatsapp-order'),
+                label: 'Send order on WhatsApp',
+                phone: ref
+                    .watch(partyListProvider(PartyType.supplier))
+                    .where((x) => x.id == p.supplierId)
+                    .firstOrNull
+                    ?.phone,
+                text: () => purchaseOrderWhatsAppText(
+                  p,
+                  business: ref.read(authControllerProvider).valueOrNull?.organization?.name ?? '',
+                ),
+              ),
             if (canCancel)
               TextButton(
                 key: const Key('purchase-cancel'),

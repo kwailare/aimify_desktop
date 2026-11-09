@@ -35,6 +35,9 @@ class _PartyFormDialogState extends ConsumerState<PartyFormDialog> {
 
   late String? _typeId = widget.party?.customerTypeId;
 
+  /// Agreed to WhatsApp messages from the business.
+  late bool _whatsappOk = widget.party?.whatsappOptIn ?? false;
+
   /// A new customer's limit and terms follow the chosen type's defaults
   /// until typed in.
   late bool _limitTouched = _editing;
@@ -76,6 +79,7 @@ class _PartyFormDialogState extends ConsumerState<PartyFormDialog> {
       creditLimit: _isCustomer ? (double.tryParse(_creditLimit.text.trim()) ?? 0) : 0,
       customerTypeId: _isCustomer ? _typeId : null,
       paymentTermsDays: int.tryParse(_terms.text.trim()) ?? 30,
+      whatsappOptIn: _whatsappOk,
     );
 
     setState(() {
@@ -239,6 +243,20 @@ class _PartyFormDialogState extends ConsumerState<PartyFormDialog> {
                   controller: _notes,
                   maxLines: 2,
                   decoration: const InputDecoration(labelText: 'Notes'),
+                ),
+                const SizedBox(height: 4),
+                CheckboxListTile(
+                  key: const Key('party-whatsapp-ok'),
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  value: _whatsappOk,
+                  onChanged: (v) => setState(() => _whatsappOk = v ?? false),
+                  title: const Text('WhatsApp OK'),
+                  subtitle: Text(
+                    _isCustomer
+                        ? 'They agreed to get invoices, receipts and reminders on WhatsApp at this number.'
+                        : 'They agreed to get purchase orders on WhatsApp at this number.',
+                  ),
                 ),
                 if (_error != null) ...[
                   const SizedBox(height: 12),
