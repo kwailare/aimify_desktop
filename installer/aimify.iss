@@ -7,7 +7,7 @@
 ;   "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\aimify.iss
 
 #define AppName "Aimify"
-#define AppVersion "1.0.0"
+#define AppVersion "1.1.0"
 #define AppPublisher "Aimify"
 #define AppExe "aimify_desktop.exe"
 #define SourceDir "..\dist\aimify-production"
