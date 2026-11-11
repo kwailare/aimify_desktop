@@ -174,6 +174,19 @@ show usage before hitting a limit:
 before the limit check. `scheduled` (or `null`) is a cheaper plan the Owner
 chose, starting `at` the end of the period already paid for.
 
+`GET /me` also says which automatic WhatsApp messages the business sends,
+and whether Aimify really sends them (`connected` is `false` until the
+WhatsApp Business account is set up, and in test mode):
+
+```json
+"whatsapp": { "connected": false, "invoices": true, "receipts": true, "reminders": true,
+              "reminderEveryDays": 7, "purchaseOrders": true, "stockAlerts": false }
+```
+
+The app opens WhatsApp itself after a sale or payment (with the invoice or
+receipt ready) unless that message is sent automatically: `connected`,
+the kind turned on, and the customer ticked.
+
 ### Changing plan
 
 Done by the Owner on the website (`/dashboard/billing`); there is no API for
@@ -890,6 +903,7 @@ Needs `sales.create`.
   "saleDate": "optional",
   "notes": "optional",
   "allowOverLimit": false,
+  "customerPhone": "optional: a walk-in's WhatsApp number",
   "clientRef": "optional, makes a retry harmless"
 }
 ```
@@ -900,7 +914,10 @@ Needs `sales.create`.
   `cash`, `transfer`, `pos`, `card`, `cheque`, `other`. Taking payment at
   the counter is part of selling; later payments need `credit.record`.
 - A walk-in sale (`customerId: null`) must be paid in full: `400`
-  `walk_in_must_pay` otherwise.
+  `walk_in_must_pay` otherwise. It may carry `customerPhone` (at most 40
+  characters): kept on the sale and returned with it, its automatic
+  WhatsApp invoice goes there (when the business sends invoices). On a
+  customer's sale it is a `400`: their phone is on the customer.
 - If the unpaid part would take the customer over their `creditLimit` (0
   means no limit), it is refused with `409 over_credit_limit` and
   `available` (credit left). `"allowOverLimit": true` (needs
@@ -1301,8 +1318,11 @@ owns is a `400`; an unknown or another organization's type is a `400`.
 Both customers and suppliers also take `paymentTermsDays` (whole days, 0 to
 365, default 30): how long after a sale (or a received purchase) it is due.
 
-Both also take `whatsappOptIn` (`true`/`false`, default `false`): they agreed
-to WhatsApp messages the business starts. Only then do they get the
+Both also take `whatsappOptIn` (`true`/`false`): they agreed to WhatsApp
+messages the business starts. Left out, it follows the phone number: a new
+customer or supplier with a phone is ticked, and adding a phone where there
+was none ticks them (unless the same request sets it); someone unticked
+stays unticked. Only then do they get the
 automatic invoices, receipts and reminders (customers) or purchase orders
 (suppliers) the business turned on (website, WhatsApp page; see
 `docs/whatsapp-setup.md`). The app's "Send on WhatsApp" buttons, which open

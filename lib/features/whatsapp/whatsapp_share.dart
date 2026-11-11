@@ -74,7 +74,7 @@ String invoiceWhatsAppText(Sale sale, {required String business}) {
   final balance = (sale.total - sale.amountPaid).clamp(0, double.infinity).toDouble();
   final lines = [for (final l in sale.lines) '• ${l.quantity} ${l.unit} ${l.productName} @ ${_money(l.unitPrice)}'];
   return [
-    'Hello ${sale.customerName},',
+    sale.customerId == null ? 'Hello,' : 'Hello ${sale.customerName},',
     'Thank you for buying from $business. Invoice ${sale.reference} (${dateFormat.format(sale.saleDate)}):',
     ...lines,
     if (sale.discount > 0) 'Discount: ${_money(sale.discount)}',

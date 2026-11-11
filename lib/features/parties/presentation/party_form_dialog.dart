@@ -38,6 +38,16 @@ class _PartyFormDialogState extends ConsumerState<PartyFormDialog> {
   /// Agreed to WhatsApp messages from the business.
   late bool _whatsappOk = widget.party?.whatsappOptIn ?? false;
 
+  /// Until ticked or unticked by hand, the tick follows the phone number:
+  /// someone with a number gets the business's WhatsApp messages.
+  bool _tickTouched = false;
+  late final bool _hadPhone = (widget.party?.phone ?? '').trim().isNotEmpty;
+
+  void _followPhone() {
+    if (_tickTouched || _hadPhone) return;
+    setState(() => _whatsappOk = _phone.text.trim().isNotEmpty);
+  }
+
   /// A new customer's limit and terms follow the chosen type's defaults
   /// until typed in.
   late bool _limitTouched = _editing;
@@ -182,6 +192,7 @@ class _PartyFormDialogState extends ConsumerState<PartyFormDialog> {
                       child: TextFormField(
                         controller: _phone,
                         keyboardType: TextInputType.phone,
+                        onChanged: (_) => _followPhone(),
                         decoration: const InputDecoration(labelText: 'Phone'),
                       ),
                     ),
@@ -250,7 +261,10 @@ class _PartyFormDialogState extends ConsumerState<PartyFormDialog> {
                   contentPadding: EdgeInsets.zero,
                   controlAffinity: ListTileControlAffinity.leading,
                   value: _whatsappOk,
-                  onChanged: (v) => setState(() => _whatsappOk = v ?? false),
+                  onChanged: (v) => setState(() {
+                    _whatsappOk = v ?? false;
+                    _tickTouched = true;
+                  }),
                   title: const Text('WhatsApp OK'),
                   subtitle: Text(
                     _isCustomer

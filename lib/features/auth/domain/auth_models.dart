@@ -222,6 +222,22 @@ class Plan {
 /// the signed-in user hasn't created an organization yet, OR when their
 /// email isn't confirmed yet (check [AuthUser.emailVerified] first — it's
 /// the more specific reason to show).
+/// The business's automatic WhatsApp messages: [connected] only when
+/// Aimify's WhatsApp Business account really sends them.
+class WhatsAppStatus {
+  const WhatsAppStatus({this.connected = false, this.invoices = false, this.receipts = false});
+
+  final bool connected;
+  final bool invoices;
+  final bool receipts;
+
+  factory WhatsAppStatus.fromJson(Map<String, dynamic> json) => WhatsAppStatus(
+        connected: json['connected'] == true,
+        invoices: json['invoices'] == true,
+        receipts: json['receipts'] == true,
+      );
+}
+
 class MeResponse {
   const MeResponse({
     required this.user,
@@ -229,6 +245,7 @@ class MeResponse {
     required this.role,
     this.permissions = const [],
     this.plan,
+    this.whatsapp = const WhatsAppStatus(),
   });
 
   final AuthUser user;
@@ -241,6 +258,8 @@ class MeResponse {
   final List<String> permissions;
 
   final Plan? plan;
+
+  final WhatsAppStatus whatsapp;
 
   bool get hasCompletedOnboarding => organization != null && role != null;
 
@@ -256,5 +275,8 @@ class MeResponse {
         role: json['role'] as String?,
         permissions: (json['permissions'] as List<dynamic>?)?.cast<String>() ?? const [],
         plan: json['plan'] == null ? null : Plan.fromJson(json['plan'] as Map<String, dynamic>),
+        whatsapp: json['whatsapp'] == null
+            ? const WhatsAppStatus()
+            : WhatsAppStatus.fromJson(json['whatsapp'] as Map<String, dynamic>),
       );
 }

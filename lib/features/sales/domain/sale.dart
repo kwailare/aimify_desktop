@@ -214,6 +214,7 @@ class SaleInput {
     this.paymentMethod = SalePaymentMethod.cash,
     this.notes,
     this.allowOverLimit = false,
+    this.customerPhone,
   });
 
   final String? customerId;
@@ -225,6 +226,9 @@ class SaleInput {
   final SalePaymentMethod paymentMethod;
   final String? notes;
   final bool allowOverLimit;
+
+  /// A walk-in's WhatsApp number, for their invoice (not a customer's).
+  final String? customerPhone;
 
   double get subtotal => lines.fold(0.0, (sum, l) => sum + l.lineTotal);
   double get total => subtotal - discount + tax;
@@ -240,6 +244,7 @@ class SaleInput {
         'paymentMethod': paymentMethod.apiValue,
         'notes': notes,
         'allowOverLimit': allowOverLimit,
+        if (customerPhone != null) 'customerPhone': customerPhone,
       };
 
   factory SaleInput.fromJson(Map<String, dynamic> json) => SaleInput(
@@ -255,6 +260,7 @@ class SaleInput {
         paymentMethod: SalePaymentMethodX.fromApi(json['paymentMethod'] as String?),
         notes: json['notes'] as String?,
         allowOverLimit: json['allowOverLimit'] as bool? ?? false,
+        customerPhone: json['customerPhone'] as String?,
       );
 
   /// The same sale pointing at server ids once records created offline have
@@ -271,5 +277,6 @@ class SaleInput {
         paymentMethod: paymentMethod,
         notes: notes,
         allowOverLimit: allowOverLimit,
+        customerPhone: customerPhone,
       );
 }

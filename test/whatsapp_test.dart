@@ -17,6 +17,7 @@ import 'package:aimify_desktop/features/purchases/presentation/purchase_detail_d
 import 'package:aimify_desktop/features/sales/domain/sale.dart';
 import 'package:aimify_desktop/features/sales/presentation/sale_detail_dialog.dart';
 import 'package:aimify_desktop/features/whatsapp/whatsapp_share.dart';
+import 'package:aimify_desktop/shared/offline/local_store.dart';
 import 'package:aimify_desktop/shared/utils/formatters.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -26,6 +27,10 @@ import 'fakes/fake_permissions.dart';
 import 'fakes/fake_repositories.dart';
 
 class _Auth extends AuthController {
+  _Auth([this.whatsapp = const WhatsAppStatus()]);
+
+  final WhatsAppStatus whatsapp;
+
   @override
   Future<MeResponse?> build() async => MeResponse(
         user: const AuthUser(id: 'u1', name: 'Ada Obi', email: 'ada@company.com'),
@@ -40,6 +45,7 @@ class _Auth extends AuthController {
         ),
         role: 'Owner',
         permissions: defaultPermissionsFor('Owner'),
+        whatsapp: whatsapp,
       );
 }
 
@@ -77,6 +83,9 @@ Future<_Opened> _pump(
   List<Party>? customers,
   FakeDebtReportRepository? debts,
   FakePartiesRepository? parties,
+  FakeSalesRepository? salesRepo,
+  MemoryLocalStore? store,
+  WhatsAppStatus whatsapp = const WhatsAppStatus(),
 }) async {
   tester.view.physicalSize = const Size(1500, 1000);
   tester.view.devicePixelRatio = 1.0;
@@ -86,10 +95,11 @@ Future<_Opened> _pump(
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
-        authControllerProvider.overrideWith(_Auth.new),
+        authControllerProvider.overrideWith(() => _Auth(whatsapp)),
         urlOpenerProvider.overrideWithValue(opened.call),
         ...fakeDataOverrides(
-          sales: FakeSalesRepository(sales),
+          sales: salesRepo ?? FakeSalesRepository(sales),
+          store: store,
           purchases: FakePurchasesRepository(purchases),
           parties: parties ?? FakePartiesRepository(customers: customers ?? [_ada()], suppliers: [_dangote]),
           debts: debts,
@@ -302,6 +312,127 @@ void main() {
       await tester.tap(find.byKey(const Key('whatsapp-invoice')));
       await _settle(tester);
       expect(find.textContaining("Couldn't open WhatsApp"), findsOneWidget);
+    });
+  });
+  group('the phone number and opening WhatsApp by itself', () {
+    Future<void> addProductAndComplete(WidgetTester tester) async {
+      await tester.tap(find.byType(DropdownMenu<String>).first);
+      await _settle(tester);
+      await tester.tap(find.text('Product 1 · SKU-1').last);
+      await _settle(tester);
+      await tester.tap(find.byKey(const Key('sale-complete')));
+      await _settle(tester);
+    }
+
+    Widget saleOpener({String? customerId}) => Consumer(
+          builder: (context, ref, _) => Center(
+            child: ElevatedButton(onPressed: () => recordSale(context, ref, customerId: customerId), child: const Text('open')),
+          ),
+        );
+
+    testWidgets('on the customer form the tick follows the phone number', (tester) async {
+      await _pump(tester, _opener(const PartyFormDialog(type: PartyType.customer)), parties: FakePartiesRepository());
+      await _open(tester);
+      CheckboxListTile tick() => tester.widget<CheckboxListTile>(find.byKey(const Key('party-whatsapp-ok')));
+      expect(tick().value, isFalse);
+      await tester.enterText(find.widgetWithText(TextFormField, 'Phone'), '0803 111 2222');
+      await _settle(tester);
+      expect(tick().value, isTrue, reason: 'a phone number ticks it');
+      await tester.enterText(find.widgetWithText(TextFormField, 'Phone'), '');
+      await _settle(tester);
+      expect(tick().value, isFalse);
+      await tester.enterText(find.widgetWithText(TextFormField, 'Phone'), '0803 111 2222');
+      await _settle(tester);
+      await tester.tap(find.byKey(const Key('party-whatsapp-ok')));
+      await _settle(tester);
+      await tester.enterText(find.widgetWithText(TextFormField, 'Phone'), '0803 111 2223');
+      await _settle(tester);
+      expect(tick().value, isFalse, reason: 'unticked by hand stays unticked');
+    });
+
+    testWidgets('a walk-in gives a number: it goes with the sale, and WhatsApp opens with the invoice', (tester) async {
+      final sales = FakeSalesRepository();
+      final opened = await _pump(tester, saleOpener(), salesRepo: sales);
+      await _open(tester);
+      await tester.enterText(find.byKey(const Key('sale-walkin-phone')), '0803 999 0000');
+      await _settle(tester);
+      expect(find.byKey(const Key('sale-send-whatsapp')), findsOneWidget);
+      await addProductAndComplete(tester);
+      expect(sales.created.single.input.customerPhone, '0803 999 0000');
+      expect(sales.created.single.input.customerId, isNull);
+      expect(opened.uris.single.path, '/2348039990000');
+      expect(opened.text, startsWith('Hello,\nThank you for buying from Obi Ltd.'));
+    });
+
+    testWidgets('a walk-in can be saved as a new customer', (tester) async {
+      final sales = FakeSalesRepository();
+      final parties = FakePartiesRepository(customers: [_ada()]);
+      final opened = await _pump(tester, saleOpener(), salesRepo: sales, parties: parties);
+      await _open(tester);
+      await tester.enterText(find.byKey(const Key('sale-walkin-phone')), '0803 777 1234');
+      await tester.tap(find.byKey(const Key('sale-save-customer')));
+      await _settle(tester);
+      await tester.enterText(find.byKey(const Key('sale-new-customer-name')), 'Musa Stores');
+      await addProductAndComplete(tester);
+      final created = parties.created.single;
+      expect((created.name, created.phone), ('Musa Stores', '0803 777 1234'));
+      expect(created.whatsappOptIn, isNull, reason: 'the server ticks anyone with a number');
+      expect(sales.created.single.input.customerId, isNotNull);
+      expect(sales.created.single.input.customerPhone, isNull);
+      expect(opened.uris.single.path, '/2348037771234');
+    });
+
+    testWidgets("a customer's number shows, and a change is saved to them", (tester) async {
+      final sales = FakeSalesRepository();
+      final parties = FakePartiesRepository(customers: [_ada()]);
+      final opened = await _pump(tester, saleOpener(customerId: 'c1'), salesRepo: sales, parties: parties);
+      await _open(tester);
+      final field = find.byKey(const Key('sale-customer-phone'));
+      expect(tester.widget<TextFormField>(field).controller!.text, _adaPhone);
+      await tester.enterText(field, '0803 111 9999');
+      await addProductAndComplete(tester);
+      expect(parties.updated.single.input.phone, '0803 111 9999');
+      expect(parties.updated.single.input.name, 'Ada Stores');
+      expect(opened.uris.single.path, '/2348031119999');
+      expect(opened.text, isNot(startsWith('Hello,')), reason: 'a customer is greeted by name');
+    });
+
+    testWidgets('turned off: remembered, and WhatsApp stays closed', (tester) async {
+      final store = MemoryLocalStore();
+      final opened = await _pump(tester, saleOpener(customerId: 'c1'), store: store);
+      await _open(tester);
+      await tester.tap(find.byKey(const Key('sale-send-whatsapp')));
+      await _settle(tester);
+      await addProductAndComplete(tester);
+      expect(opened.uris, isEmpty);
+      expect(await store.read('whatsapp_auto_open'), 'off');
+    });
+
+    testWidgets("when Aimify's WhatsApp sends invoices itself, the app doesn't open it too", (tester) async {
+      final opened = await _pump(
+        tester,
+        saleOpener(customerId: 'c1'),
+        whatsapp: const WhatsAppStatus(connected: true, invoices: true, receipts: true),
+      );
+      await _open(tester);
+      await addProductAndComplete(tester);
+      expect(opened.uris, isEmpty);
+    });
+
+    testWidgets('a payment on a sale opens WhatsApp with the receipt', (tester) async {
+      final opened = await _pump(
+        tester,
+        _opener(const SaleDetailDialog(saleId: 'a')),
+        sales: [fixtureSale('a', customerName: 'Ada Stores', amountPaid: 100)],
+      );
+      await _open(tester);
+      await tester.tap(find.byKey(const Key('sale-pay')));
+      await _settle(tester);
+      await tester.enterText(find.byKey(const Key('sale-payment-amount')), '50');
+      await tester.tap(find.byKey(const Key('sale-payment-confirm')));
+      await _settle(tester);
+      expect(opened.uris.single.path, '/$_adaNumber');
+      expect(opened.text, contains('received your payment of ${currencyFormat.format(50)} (payment on INV-0001)'));
     });
   });
 }

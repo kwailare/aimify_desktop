@@ -11,6 +11,7 @@ import '../../parties/domain/party.dart';
 import '../../products/data/products_repository.dart';
 import '../../products/domain/product.dart';
 import '../../warehouses/data/warehouses_repository.dart';
+import '../../whatsapp/whatsapp_auto.dart';
 import '../data/sales_repository.dart';
 import '../domain/sale.dart';
 
@@ -36,7 +37,9 @@ class _LineDraft {
 
 /// What the form returns: the recorded sale (null when it was saved
 /// offline) and any stock alerts it caused.
-typedef SaleFormResult = ({SaleOutcome? outcome, bool queued});
+/// The sale, and who to send its invoice to on WhatsApp ([whatsAppPhone],
+/// and whether they agreed to automatic messages).
+typedef SaleFormResult = ({SaleOutcome? outcome, bool queued, String? whatsAppPhone, bool whatsAppAgreed});
 
 /// Records a sale: who it's for (a customer, or a walk-in who pays in
 /// full), which warehouse it leaves from, products at their selling price
@@ -62,6 +65,15 @@ class _SaleFormDialogState extends ConsumerState<SaleFormDialog> {
   final _notes = TextEditingController();
   SalePaymentMethod _method = SalePaymentMethod.cash;
 
+  /// The customer's WhatsApp number: a walk-in's (kept on the sale), or the
+  /// chosen customer's (a change is saved to the customer).
+  final _phone = TextEditingController();
+  final _newCustomerName = TextEditingController();
+  bool _saveAsCustomer = false;
+
+  /// The customer the phone box was filled for (and whether they had loaded).
+  (String?, bool)? _phoneFilledFor;
+
   /// Until someone types in "Paid now", it follows the total (a cash sale).
   bool _paidTouched = false;
   bool _allowOverLimit = false;
@@ -70,7 +82,7 @@ class _SaleFormDialogState extends ConsumerState<SaleFormDialog> {
 
   @override
   void dispose() {
-    for (final c in [_discount, _tax, _paid, _notes]) {
+    for (final c in [_discount, _tax, _paid, _notes, _phone, _newCustomerName]) {
       c.dispose();
     }
     for (final l in _lines) {
@@ -123,13 +135,58 @@ class _SaleFormDialogState extends ConsumerState<SaleFormDialog> {
       setState(() => _error = "Paid now can't be more than the total.");
       return;
     }
-    if (_customerId == null && paid < total - 0.004) {
+    final phone = _phone.text.trim().isEmpty ? null : _phone.text.trim();
+    final walkIn = _customerId == null && !_saveAsCustomer;
+    if (walkIn && paid < total - 0.004) {
       setState(() => _error = 'A walk-in sale must be paid in full. Choose the customer to sell on credit.');
       return;
     }
 
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    var customerId = _customerId;
+    // Whether they agreed to automatic WhatsApp messages: a walk-in or a new
+    // customer giving their number did; a customer, as their tick says (a
+    // number added where there was none ticks it).
+    var agreed = customer?.whatsappOptIn ?? true;
+    try {
+      final parties = ref.read(partiesProvider(PartyType.customer).notifier);
+      if (_customerId == null && _saveAsCustomer) {
+        final created = await parties.add(
+          PartyInput(type: PartyType.customer, name: _newCustomerName.text.trim(), phone: phone),
+        );
+        customerId = created.value!.id;
+      } else if (customer != null && phone != (customer.phone?.trim().isEmpty ?? true ? null : customer.phone!.trim())) {
+        if ((customer.phone ?? '').trim().isEmpty && phone != null) agreed = true;
+        await parties.edit(
+          customer.id,
+          PartyInput(
+            type: PartyType.customer,
+            name: customer.name,
+            phone: phone,
+            email: customer.email,
+            address: customer.address,
+            notes: customer.notes,
+            creditLimit: customer.creditLimit,
+            customerTypeId: customer.customerTypeId,
+            paymentTermsDays: customer.paymentTermsDays,
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _saving = false;
+        _error = friendlyError(e);
+      });
+      return;
+    }
+
     final input = SaleInput(
-      customerId: _customerId,
+      customerId: customerId,
+      customerPhone: walkIn ? phone : null,
       warehouseId: _warehouseId!,
       lines: [
         for (final l in _lines) SaleLineInput(productId: l.product.id, quantity: l.quantityValue, unitPrice: l.priceValue),
@@ -142,14 +199,12 @@ class _SaleFormDialogState extends ConsumerState<SaleFormDialog> {
       allowOverLimit: _allowOverLimit,
     );
 
-    setState(() {
-      _saving = true;
-      _error = null;
-    });
     try {
       final result = await ref.read(salesProvider.notifier).add(input);
       if (!mounted) return;
-      Navigator.of(context).pop<SaleFormResult>((outcome: result.value, queued: result.queued));
+      Navigator.of(context).pop<SaleFormResult>(
+        (outcome: result.value, queued: result.queued, whatsAppPhone: phone, whatsAppAgreed: agreed),
+      );
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -177,6 +232,17 @@ class _SaleFormDialogState extends ConsumerState<SaleFormDialog> {
     int held(Product p) => warehouseId == null ? 0 : p.stockIn(warehouseId);
 
     final customer = customers.where((c) => c.id == _customerId).firstOrNull;
+    // The phone box shows the chosen customer's number (once they've loaded);
+    // a walk-in starts empty.
+    if (_phoneFilledFor != (_customerId, customer != null)) {
+      final before = _phoneFilledFor;
+      _phoneFilledFor = (_customerId, customer != null);
+      if (_customerId != null || before?.$1 != null) _phone.text = customer?.phone ?? '';
+    }
+    final canCreateCustomer = hasPermission(ref, Permissions.customersCreate);
+    final canEditCustomer = hasPermission(ref, Permissions.customersEdit);
+    final hasPhone = _phone.text.trim().isNotEmpty;
+    final autoOpen = ref.watch(whatsAppAutoOpenProvider).valueOrNull ?? true;
     final unpaid = _total - _paidNow;
     final creditLeft = customer == null || customer.creditLimit <= 0 ? null : customer.creditLimit - customer.balanceOwed;
     final overLimit = creditLeft != null && unpaid > 0.004 && unpaid > creditLeft + 0.004;
@@ -234,6 +300,61 @@ class _SaleFormDialogState extends ConsumerState<SaleFormDialog> {
                     ),
                   ],
                 ),
+                const SizedBox(height: 8),
+                if (_customerId == null) ...[
+                  TextFormField(
+                    key: const Key('sale-walkin-phone'),
+                    controller: _phone,
+                    enabled: !_saving,
+                    keyboardType: TextInputType.phone,
+                    onChanged: (_) => setState(() {}),
+                    decoration: const InputDecoration(
+                      labelText: "Customer's WhatsApp number (optional)",
+                      helperText: 'For their invoice on WhatsApp',
+                      prefixIcon: Icon(Icons.chat_outlined, size: 18),
+                    ),
+                  ),
+                  if (canCreateCustomer)
+                    CheckboxListTile(
+                      key: const Key('sale-save-customer'),
+                      contentPadding: EdgeInsets.zero,
+                      controlAffinity: ListTileControlAffinity.leading,
+                      value: _saveAsCustomer,
+                      onChanged: _saving ? null : (v) => setState(() => _saveAsCustomer = v ?? false),
+                      title: const Text('Save them as a new customer'),
+                      subtitle: const Text('So their name and number are there next time.'),
+                    ),
+                  if (_saveAsCustomer)
+                    TextFormField(
+                      key: const Key('sale-new-customer-name'),
+                      controller: _newCustomerName,
+                      enabled: !_saving,
+                      decoration: const InputDecoration(labelText: 'Customer name'),
+                      validator: (v) => _saveAsCustomer && (v ?? '').trim().isEmpty ? 'Enter their name' : null,
+                    ),
+                ] else
+                  TextFormField(
+                    key: const Key('sale-customer-phone'),
+                    controller: _phone,
+                    enabled: !_saving && canEditCustomer,
+                    keyboardType: TextInputType.phone,
+                    onChanged: (_) => setState(() {}),
+                    decoration: InputDecoration(
+                      labelText: "Customer's phone (WhatsApp)",
+                      helperText: canEditCustomer ? 'A change is saved to the customer' : null,
+                      prefixIcon: const Icon(Icons.chat_outlined, size: 18),
+                    ),
+                  ),
+                if (hasPhone)
+                  CheckboxListTile(
+                    key: const Key('sale-send-whatsapp'),
+                    contentPadding: EdgeInsets.zero,
+                    controlAffinity: ListTileControlAffinity.leading,
+                    value: autoOpen,
+                    onChanged: _saving ? null : (v) => ref.read(whatsAppAutoOpenProvider.notifier).set(v ?? true),
+                    title: const Text('Send the invoice on WhatsApp'),
+                    subtitle: const Text('WhatsApp opens with it ready; you press Send. Remembered on this computer.'),
+                  ),
                 if (customer != null) ...[
                   const SizedBox(height: 6),
                   Text(

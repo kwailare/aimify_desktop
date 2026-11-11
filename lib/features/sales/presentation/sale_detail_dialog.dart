@@ -14,6 +14,7 @@ import '../../parties/data/parties_repository.dart';
 import '../../parties/domain/party.dart';
 import '../data/sales_repository.dart';
 import '../domain/sale.dart';
+import '../../whatsapp/whatsapp_auto.dart';
 import '../../whatsapp/whatsapp_share.dart';
 import 'sale_form_dialog.dart';
 
@@ -80,6 +81,14 @@ Future<void> recordSale(BuildContext context, WidgetRef ref, {String? customerId
       ),
       action: SnackBarAction(label: 'Print invoice', onPressed: () => printInvoice(context, ref, sale)),
     ),
+  );
+  await autoOpenWhatsApp(
+    context,
+    ref,
+    phone: result.whatsAppPhone,
+    text: invoiceWhatsAppText(sale, business: ref.read(authControllerProvider).valueOrNull?.organization?.name ?? ''),
+    kind: WhatsAppMessageKind.invoice,
+    recipientAgreed: result.whatsAppAgreed,
   );
 }
 
@@ -463,6 +472,25 @@ class _SalePaymentDialogState extends ConsumerState<SalePaymentDialog> {
     try {
       await ref.read(salesProvider.notifier).pay(widget.sale.id, amount: amount, method: _method, note: _note.text);
       if (!mounted) return;
+      // The receipt on WhatsApp, when wanted (before this window closes).
+      final customer = _customerOf(ref, widget.sale);
+      if (customer != null) {
+        await autoOpenWhatsApp(
+          context,
+          ref,
+          phone: customer.phone,
+          text: receiptWhatsAppText(
+            customer: customer.name,
+            business: ref.read(authControllerProvider).valueOrNull?.organization?.name ?? '',
+            amount: amount,
+            reference: 'payment on ${widget.sale.reference}',
+            balance: customer.balanceOwed - amount,
+          ),
+          kind: WhatsAppMessageKind.receipt,
+          recipientAgreed: customer.whatsappOptIn,
+        );
+        if (!mounted) return;
+      }
       final messenger = ScaffoldMessenger.of(context);
       Navigator.of(context).pop(true);
       messenger

@@ -6,7 +6,10 @@ import '../../../shared/utils/formatters.dart';
 import '../../../shared/utils/friendly_error.dart';
 import '../../documents/debt_documents.dart';
 import '../../documents/document_preview.dart';
+import '../../auth/presentation/auth_controller.dart';
 import '../../sales/domain/sale.dart';
+import '../../whatsapp/whatsapp_auto.dart';
+import '../../whatsapp/whatsapp_share.dart';
 import '../data/parties_repository.dart';
 import '../domain/party.dart';
 
@@ -59,6 +62,23 @@ Future<void> recordCreditEntry(BuildContext context, WidgetRef ref, Party party,
           : SnackBarAction(label: 'Print receipt', onPressed: () => printAccountReceipt(context, ref, party, entry)),
     ),
   );
+  // A customer's receipt on WhatsApp, when wanted.
+  if (party.type == PartyType.customer && entry.receiptNumber != null) {
+    await autoOpenWhatsApp(
+      context,
+      ref,
+      phone: party.phone,
+      text: receiptWhatsAppText(
+        customer: party.name,
+        business: ref.read(authControllerProvider).valueOrNull?.organization?.name ?? '',
+        amount: entry.amount.abs(),
+        reference: entry.receiptNumber!,
+        balance: value.balanceOwed,
+      ),
+      kind: WhatsAppMessageKind.receipt,
+      recipientAgreed: party.whatsappOptIn,
+    );
+  }
 }
 
 /// Record a payment, a charge or an adjustment on one party's credit ledger.

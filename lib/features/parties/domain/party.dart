@@ -141,7 +141,7 @@ class Party {
         totalPurchases: totalPurchases,
         purchaseCount: purchaseCount,
         lastPurchaseAt: lastPurchaseAt,
-        whatsappOptIn: input.whatsappOptIn,
+        whatsappOptIn: input.whatsappOptIn ?? whatsappOptIn,
       );
 
   factory Party.fromJson(PartyType type, Map<String, dynamic> json) => Party(
@@ -184,7 +184,7 @@ class PartyInput {
     this.creditLimit = 0,
     this.customerTypeId,
     this.paymentTermsDays = 30,
-    this.whatsappOptIn = false,
+    this.whatsappOptIn,
   });
 
   final PartyType type;
@@ -200,7 +200,10 @@ class PartyInput {
   final String? customerTypeId;
 
   final int paymentTermsDays;
-  final bool whatsappOptIn;
+
+  /// Their WhatsApp consent; null when not chosen (imports), so the server
+  /// ticks anyone with a phone number.
+  final bool? whatsappOptIn;
 
   /// The request body. Customers send `creditLimit`, suppliers send
   /// `contactPerson` — the server refuses the other resource's field.
@@ -214,7 +217,7 @@ class PartyInput {
         if (type == PartyType.customer) 'creditLimit': creditLimit,
         if (type == PartyType.customer) 'customerTypeId': customerTypeId,
         'paymentTermsDays': paymentTermsDays,
-        'whatsappOptIn': whatsappOptIn,
+        if (whatsappOptIn != null) 'whatsappOptIn': whatsappOptIn,
       };
 
   factory PartyInput.fromJson(PartyType type, Map<String, dynamic> json) => PartyInput(
@@ -228,7 +231,7 @@ class PartyInput {
         creditLimit: (json['creditLimit'] as num?)?.toDouble() ?? 0,
         customerTypeId: json['customerTypeId'] as String?,
         paymentTermsDays: (json['paymentTermsDays'] as num?)?.toInt() ?? 30,
-        whatsappOptIn: json['whatsappOptIn'] == true,
+        whatsappOptIn: json['whatsappOptIn'] as bool?,
       );
 
   Party toLocalParty(String id) => Party(
@@ -244,7 +247,7 @@ class PartyInput {
         isPending: true,
         customerTypeId: customerTypeId,
         paymentTermsDays: paymentTermsDays,
-        whatsappOptIn: whatsappOptIn,
+        whatsappOptIn: whatsappOptIn ?? (phone?.trim().isNotEmpty ?? false),
       );
 }
 
