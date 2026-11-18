@@ -286,6 +286,19 @@ passes.
 }
 ```
 
+Failure — `403` with `"code": "user_suspended"`: the Aimify team has
+suspended this person (a correct password is still refused). Show the
+`error` as it is. Suspending also ends every session the person has, so
+their authenticated calls get `401` within about 20 seconds; a deleted
+person gets `401` too, and can't sign in again.
+
+```json
+{
+  "error": "This account has been suspended. Contact support@aimify.app for help.",
+  "code": "user_suspended"
+}
+```
+
 ## `POST /api/v1/auth/logout`
 
 Header required: `Authorization: Bearer <token>`. No body.
